@@ -15,8 +15,13 @@ DEFAULT_LOG_LEVEL = "info"
 
 APP_ID = "ha.iliadbox"
 APP_NAME = "Home Assistant"
-APP_VERSION = "0.8.0"
+APP_VERSION = "0.9.0"
 DEVICE_NAME = "Home Assistant"
+
+# LAN devices not seen for more than this many days are hidden (0 = keep all)
+CONF_MAX_AGE_DAYS = "max_age_days"
+DEFAULT_MAX_AGE_DAYS = 30
+MAX_MAX_AGE_DAYS = 3650
 
 # Polling interval in seconds, set in the options
 DEFAULT_SCAN_INTERVAL = 60

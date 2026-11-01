@@ -6,9 +6,10 @@ import logging
 
 from homeassistant.config_entries import ConfigEntryState
 from homeassistant.const import CONF_HOST, CONF_PORT, CONF_VERIFY_SSL
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, callback
 from homeassistant.exceptions import ConfigEntryAuthFailed, ConfigEntryNotReady
 from homeassistant.helpers import config_validation as cv
+from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.device_registry import CONNECTION_NETWORK_MAC, DeviceEntry
 from homeassistant.helpers.typing import ConfigType
@@ -17,8 +18,10 @@ from .api import IliadboxAuthError, IliadboxClient, IliadboxError
 from .const import (
     CONF_APP_TOKEN,
     CONF_LOG_LEVEL,
+    CONF_MAX_AGE_DAYS,
     CONF_USE_SSL,
     DEFAULT_LOG_LEVEL,
+    DEFAULT_MAX_AGE_DAYS,
     DOMAIN,
     PLATFORMS,
 )
@@ -90,8 +93,33 @@ async def async_setup_entry(hass: HomeAssistant, entry: IliadboxConfigEntry) -> 
     )
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+    _remove_old_devices(hass, entry)
+    entry.async_on_unload(coordinator.async_add_listener(lambda: _remove_old_devices(hass, entry)))
     await async_register_panel(hass)
     return True
+
+
+@callback
+def _remove_old_devices(hass: HomeAssistant, entry: IliadboxConfigEntry) -> None:
+    """Detach LAN devices the box no longer reports within max_age_days.
+
+    Detaching removes this integration's entities from the device; a device
+    shared with another integration (same MAC) stays for that integration.
+    A device that comes back is created again.
+    """
+    hosts = entry.runtime_data.data["hosts"]
+    registry = dr.async_get(hass)
+    for device in dr.async_entries_for_config_entry(registry, entry.entry_id):
+        if any(identifier[0] == DOMAIN for identifier in device.identifiers):
+            continue  # the box itself
+        macs = {mac.lower() for kind, mac in device.connections if kind == CONNECTION_NETWORK_MAC}
+        if macs and not macs & hosts.keys():
+            _LOGGER.info(
+                "Removing %s: not seen in the last %s days",
+                device.name_by_user or device.name,
+                entry.options.get(CONF_MAX_AGE_DAYS, DEFAULT_MAX_AGE_DAYS),
+            )
+            registry.async_update_device(device.id, remove_config_entry_id=entry.entry_id)
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: IliadboxConfigEntry) -> bool:

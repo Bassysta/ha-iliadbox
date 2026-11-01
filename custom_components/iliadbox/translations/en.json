@@ -65,6 +65,7 @@
           "use_ssl": "Use HTTPS",
           "verify_ssl": "Verify the certificate",
           "scan_interval": "Polling interval",
+          "max_age_days": "Hide devices not seen for",
           "log_level": "Log level"
         },
         "data_description": {
@@ -73,6 +74,7 @@
           "use_ssl": "Encrypt the traffic between Home Assistant and the box.",
           "verify_ssl": "Only with HTTPS. Turn it off to accept the box self-signed certificate, or when connecting by IP address.",
           "scan_interval": "How often the box is read, in seconds (10-3600). Shorter means faster presence detection and more requests to the box.",
+          "max_age_days": "The box remembers every device ever connected. Devices whose last activity is older than this many days are removed from Home Assistant and the panel, and come back automatically if they reconnect. 0 = show all.",
           "log_level": "Error: failures only. Info: also connections, Wi-Fi and device presence changes. Debug: also every API call."
         }
       }

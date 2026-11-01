@@ -159,6 +159,7 @@ The box is polled every **60 seconds** by default (see [Settings](#settings)), w
 | Use HTTPS | off | |
 | Verify the certificate | on at setup | turn off for HTTPS by IP address |
 | Polling interval | 60 s | 10-3600 s; shorter = faster presence detection |
+| Hide devices not seen for | 30 days | devices whose last activity is older are removed from HA and the panel; they come back if they reconnect. 0 = show all |
 | Log level | Info | Error / Info / Debug |
 
 Connection changes are tested on the box before saving, using the current authorization: no confirmation on the box is needed. The integration reloads after saving.
@@ -203,7 +204,7 @@ Reboot, Wi-Fi and guest actions, and guest passwords, are available only to Home
 
 ## LAN devices
 
-Every host listed by the box (connected now or seen before) becomes a Home Assistant device, linked to the box (*Connected via*), with a `device_tracker`, a *Connected* binary sensor and the sensors listed in [Entities](#each-lan-device-its-own-device-see-below). The tracker:
+Every host listed by the box that was active in the last 30 days (configurable, see [Settings](#settings)) becomes a Home Assistant device, linked to the box (*Connected via*), with a `device_tracker`, a *Connected* binary sensor and the sensors listed in [Entities](#each-lan-device-its-own-device-see-below). The tracker:
 
 - state `home` when the box reports the device as connected, `not_home` otherwise;
 - attributes `ip`, `mac`, `host_name`, `vendor`, `host_type`, `last_activity`.
@@ -277,7 +278,8 @@ The level applies immediately, without restarting. Logs are under **Settings →
 | *Request timed out* | Press Submit to send a new request and accept it within a couple of minutes. |
 | Wi-Fi switch, reboot or guest Wi-Fi fail | Grant the **Modify settings** permission to "Home Assistant" in Access management → Applications. |
 | A LAN device is missing | Devices appear when the box lists them; new ones are added at the next poll (60 seconds by default). |
-| Too many old devices | Delete them from the device page (⋮ → Delete). Only devices the box no longer lists can be deleted; the box keeps a history of past devices. |
+| Too many old devices | Lower *Hide devices not seen for* in **Configure**: older devices are removed automatically. |
+| A device is named like `Espressif 7C:29` | The box has no name for it: the vendor and the end of the MAC are used. Rename it in Home Assistant if you like. |
 | After a box factory reset | The token is erased: accept the re-authorization. The LAN address goes back to `192.168.1.254`: set the old one again on the box, or use **Configure** to point the integration to the new address. |
 
 For a detailed log, set the log level to **Debug** and reproduce the problem.

@@ -30,6 +30,26 @@ def box_id(coordinator: IliadboxCoordinator) -> str:
     return coordinator.config_entry.unique_id or coordinator.config_entry.entry_id
 
 
+def host_display_name(host: dict[str, Any], mac: str) -> str:
+    """Best name for a LAN host.
+
+    Most hosts remembered by the box have no name: fall back to the names the
+    device announced (DHCP, mDNS), then to vendor + end of the MAC, which is
+    still unique and readable. The bare MAC is the last resort.
+    """
+    if host.get("primary_name"):
+        return host["primary_name"]
+    for item in host.get("names") or []:
+        if item.get("name"):
+            return item["name"]
+    dhcp = ((host.get("info") or {}).get("dhcp") or {}).get("Host Name")
+    if dhcp:
+        return dhcp
+    if host.get("vendor_name"):
+        return f"{host['vendor_name'].split(',')[0].strip()} {mac[-5:].upper()}"
+    return mac.upper()
+
+
 def host_device_info(coordinator: IliadboxCoordinator, mac: str) -> DeviceInfo:
     """Device of a LAN host, matched by MAC.
 
@@ -39,7 +59,7 @@ def host_device_info(coordinator: IliadboxCoordinator, mac: str) -> DeviceInfo:
     host = coordinator.data["hosts"].get(mac, {})
     return DeviceInfo(
         connections={(CONNECTION_NETWORK_MAC, mac)},
-        default_name=host.get("primary_name") or mac,
+        default_name=host_display_name(host, mac),
         default_manufacturer=host.get("vendor_name") or None,
         default_model=host.get("host_type") or None,
         via_device=(DOMAIN, box_id(coordinator)),
@@ -85,8 +105,12 @@ def add_entities_for_new_hosts(
 
     @callback
     def _add_new() -> None:
+        hosts = coordinator.data["hosts"]
+        # Hosts hidden by max_age_days had their device removed: forget them so
+        # their entities are created again if they come back
+        seen.intersection_update(hosts)
         entities: list[Any] = []
-        for mac, host in coordinator.data["hosts"].items():
+        for mac, host in hosts.items():
             if mac not in seen:
                 seen.add(mac)
                 entities.extend(factory(mac, bool(host.get("active"))))

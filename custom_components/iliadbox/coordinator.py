@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 from datetime import timedelta
 from typing import Any
 
@@ -15,7 +16,7 @@ from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
 from .api import IliadboxAuthError, IliadboxClient, IliadboxError
-from .const import DEFAULT_SCAN_INTERVAL, DOMAIN
+from .const import CONF_MAX_AGE_DAYS, DEFAULT_MAX_AGE_DAYS, DEFAULT_SCAN_INTERVAL, DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -39,6 +40,7 @@ class IliadboxCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             update_interval=timedelta(seconds=interval),
         )
         self.client = client
+        self.hidden_hosts = 0
         _LOGGER.debug("Polling the box every %s seconds", interval)
 
     async def _async_update_data(self) -> dict[str, Any]:
@@ -68,17 +70,26 @@ class IliadboxCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         guest_ssid = next((r["guest_ssid"] for r in radios if r.get("guest_ssid")), None)
 
         connection = connection or {}
+        # The box remembers every device ever seen: keep the connected ones and
+        # those active within max_age_days (0 = keep all)
+        max_age = self.config_entry.options.get(CONF_MAX_AGE_DAYS, DEFAULT_MAX_AGE_DAYS)
+        oldest = time.time() - max_age * 86400
         hosts_by_mac = {
             h["l2ident"]["id"].lower(): h
             for h in hosts
             if h.get("l2ident", {}).get("type") == "mac_address"
+            and (not max_age or h.get("active") or (h.get("last_activity") or 0) >= oldest)
         }
+        self.hidden_hosts = len(hosts) - len(hosts_by_mac)
         self._log_changes(connection, wifi or {}, hosts_by_mac)
         _LOGGER.debug(
-            "Update done: WAN %s, %d/%d hosts active, Wi-Fi %s, %d guest accesses",
+            "Update done: WAN %s, %d/%d hosts active (%d older than %s days hidden), "
+            "Wi-Fi %s, %d guest accesses",
             connection.get("state"),
             sum(1 for h in hosts_by_mac.values() if h.get("active")),
             len(hosts_by_mac),
+            self.hidden_hosts,
+            max_age or "∞",
             "on" if (wifi or {}).get("enabled") else "off",
             len(guest_keys),
         )

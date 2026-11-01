@@ -29,14 +29,17 @@ from .api import IliadboxClient, IliadboxConnectionError, IliadboxError, Iliadbo
 from .const import (
     CONF_APP_TOKEN,
     CONF_LOG_LEVEL,
+    CONF_MAX_AGE_DAYS,
     CONF_USE_SSL,
     DEFAULT_HOST,
     DEFAULT_LOG_LEVEL,
+    DEFAULT_MAX_AGE_DAYS,
     DEFAULT_PORT,
     DEFAULT_SCAN_INTERVAL,
     DEFAULT_SSL_PORT,
     DOMAIN,
     LOG_LEVELS,
+    MAX_MAX_AGE_DAYS,
     MAX_SCAN_INTERVAL,
     MIN_SCAN_INTERVAL,
 )
@@ -266,6 +269,7 @@ class IliadboxOptionsFlow(OptionsFlow):
                 return self.async_create_entry(
                     data={
                         CONF_SCAN_INTERVAL: int(user_input[CONF_SCAN_INTERVAL]),
+                        CONF_MAX_AGE_DAYS: int(user_input[CONF_MAX_AGE_DAYS]),
                         CONF_LOG_LEVEL: user_input[CONF_LOG_LEVEL],
                     }
                 )
@@ -290,6 +294,18 @@ class IliadboxOptionsFlow(OptionsFlow):
                             max=MAX_SCAN_INTERVAL,
                             step=5,
                             unit_of_measurement="s",
+                            mode=NumberSelectorMode.BOX,
+                        )
+                    ),
+                    vol.Required(
+                        CONF_MAX_AGE_DAYS,
+                        default=current.get(CONF_MAX_AGE_DAYS, DEFAULT_MAX_AGE_DAYS),
+                    ): NumberSelector(
+                        NumberSelectorConfig(
+                            min=0,
+                            max=MAX_MAX_AGE_DAYS,
+                            step=1,
+                            unit_of_measurement="d",
                             mode=NumberSelectorMode.BOX,
                         )
                     ),

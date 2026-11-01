@@ -45,6 +45,8 @@ async def async_setup_entry(
 
     @callback
     def _add_new() -> None:
+        # Forget hosts hidden by max_age_days, so they are added again if they return
+        tracked.intersection_update(coordinator.data["hosts"])
         new = [mac for mac in coordinator.data["hosts"] if mac not in tracked]
         if new:
             _LOGGER.debug("Adding %d device trackers", len(new))

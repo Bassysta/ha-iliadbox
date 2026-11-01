@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.9.0
+
+- New setting **Hide devices not seen for** (default 30 days, 0 = all): devices whose last activity is older are removed from Home Assistant and from the panel, and come back automatically if they reconnect.
+- Devices without a name on the box are named after the name they announce on the network (DHCP / mDNS) or, failing that, vendor + end of the MAC (e.g. `Espressif 7C:29`) instead of the bare MAC. Applies to newly created devices.
+
 ## 0.8.0
 
 - Sidebar panel supports **several Iliadbox**: the home shows one card per box (icon, name, model, address, status and main values); click a card to manage that box. Boxes configured but not running are shown greyed out.
