@@ -2,7 +2,7 @@
 
 ## 0.5.1
 
-- Integration icon (light and dark) in `brand/`, shown by Home Assistant 2026.3+.
+- Integration icon in `brand/`, shown by Home Assistant 2026.3+.
 
 ## 0.5.0
 

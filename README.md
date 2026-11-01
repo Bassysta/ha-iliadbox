@@ -76,7 +76,7 @@ You can check that the box answers by opening `http://<box-ip>/api_version` from
 
 ### Icon
 
-The integration ships its own icon in `custom_components/iliadbox/brand/` (light and dark variants). Home Assistant **2026.3+** shows it in **Settings → Devices & services** and in the integration page; older versions show a generic placeholder.
+The integration ships its own icon in `custom_components/iliadbox/brand/` (one variant, used in both light and dark theme). Home Assistant **2026.3+** shows it in **Settings → Devices & services** and in the integration page; older versions show a generic placeholder.
 
 The **HACS** list and download page do not use local icons yet: HACS takes icons only from the `home-assistant/brands` repository, which no longer accepts custom integrations ([hacs/integration#5171](https://github.com/hacs/integration/issues/5171)). There the integration shows "icon not available" until HACS adds support; installing and updating are not affected.
 
