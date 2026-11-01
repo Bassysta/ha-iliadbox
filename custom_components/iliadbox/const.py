@@ -17,7 +17,7 @@ DEFAULT_LOG_LEVEL = "info"
 
 APP_ID = "ha.iliadbox"
 APP_NAME = "Home Assistant"
-APP_VERSION = "0.5.0"
+APP_VERSION = "0.5.1"
 DEVICE_NAME = "Home Assistant"
 
 SCAN_INTERVAL = timedelta(seconds=30)

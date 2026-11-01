@@ -1,3 +1,5 @@
+<img src="custom_components/iliadbox/brand/icon.png" alt="Iliadbox integration icon" width="96" align="right">
+
 # Iliadbox for Home Assistant
 
 [![HACS Custom](https://img.shields.io/badge/HACS-Custom-41BDF5.svg)](https://hacs.xyz/docs/faq/custom_repositories)
@@ -71,6 +73,12 @@ You can check that the box answers by opening `http://<box-ip>/api_version` from
 
 1. Copy `custom_components/iliadbox` into the `config/custom_components/` folder of Home Assistant.
 2. Restart Home Assistant.
+
+### Icon
+
+The integration ships its own icon in `custom_components/iliadbox/brand/` (light and dark variants). Home Assistant **2026.3+** shows it in **Settings → Devices & services** and in the integration page; older versions show a generic placeholder.
+
+The **HACS** list and download page do not use local icons yet: HACS takes icons only from the `home-assistant/brands` repository, which no longer accepts custom integrations ([hacs/integration#5171](https://github.com/hacs/integration/issues/5171)). There the integration shows "icon not available" until HACS adds support; installing and updating are not affected.
 
 ## Configuration
 

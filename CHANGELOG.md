@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.5.1
+
+- Integration icon (light and dark) in `brand/`, shown by Home Assistant 2026.3+.
+
 ## 0.5.0
 
 - HTTPS: new *Verify the certificate* option. Turn it off to accept the box self-signed certificate (needed when connecting by IP). Existing entries keep working without verification.
