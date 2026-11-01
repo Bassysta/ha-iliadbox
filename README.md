@@ -56,7 +56,7 @@ Why verification usually has to be off on the LAN: the box certificate is issued
 
 When *Use HTTPS* is on and the port is left at `80`, the integration switches to `443` automatically. If verification fails during setup, the form shows *The box certificate could not be verified*: turn off *Verify the certificate* and submit again.
 
-To change address, port or HTTPS later: **Settings → Devices & services → Iliadbox → ⋮ → Reconfigure**. The current authorization is kept, so no confirmation on the box is needed. Reconfigure also helps after a factory reset brings the box back to `192.168.1.254`.
+To change address, port or HTTPS later: **Settings → Devices & services → Iliadbox → Configure** (or ⋮ → **Reconfigure**). The current authorization is kept, so no confirmation on the box is needed. Reconfigure also helps after a factory reset brings the box back to `192.168.1.254`.
 
 You can check that the box answers by opening `http://<box-ip>/api_version` from a device on the same network: it returns a small JSON with the box model and API version.
 
@@ -91,21 +91,77 @@ The access token is stored in the Home Assistant config entry. If you revoke it 
 
 ## Entities
 
-| Platform | Entity | Notes |
-|---|---|---|
-| binary_sensor | Internet connection | `on` when the WAN is up |
-| sensor | Download rate, Upload rate | current throughput |
-| sensor | Download bandwidth, Upload bandwidth | line speed |
-| sensor | Downloaded data, Uploaded data | total counters |
-| sensor | Public IP, Public IPv6 | IPv6 disabled by default |
-| sensor | Line type, Uptime, Temperature *, Fan * | diagnostic |
-| switch | Wi-Fi | needs *Modify settings* |
-| button | Reboot | needs *Modify settings* |
-| button | Create guest Wi-Fi | defaults, see below |
-| device_tracker | one per LAN device | each in its own device, enabled |
-| sensor | Guest Wi-Fi | number of active guest accesses; attributes: network name and accesses (no passwords) |
+Every value read from the box is a separate entity, so dashboards and automations can use any of them. Entities marked *off* are created disabled: enable them from the entity settings.
 
-Data is polled every 30 seconds with a single request per endpoint, regardless of how many devices are on the network.
+### Box (device *iliadbox Server*)
+
+| Platform | Entity | Default |
+|---|---|---|
+| binary_sensor | Internet connection | on |
+| binary_sensor | Wi-Fi power saving | on, diagnostic |
+| binary_sensor | Box authenticated | off, diagnostic |
+| sensor | Download rate, Upload rate | on |
+| sensor | Download bandwidth, Upload bandwidth | on |
+| sensor | Downloaded data, Uploaded data | on |
+| sensor | Public IP | on |
+| sensor | Public IPv6 | off |
+| sensor | Connection state, Connection type, Line type | on, diagnostic |
+| sensor | IPv4 port range | off, diagnostic |
+| sensor | Uptime, Firmware, Temperature *, Fan * | on, diagnostic |
+| sensor | Serial number, MAC address, Board, Disk status | off, diagnostic |
+| sensor | Connected devices | on |
+| sensor | Known devices | on, diagnostic |
+| sensor | Wi-Fi clients (total) | on |
+| sensor | Wi-Fi MAC filter | on, diagnostic |
+| sensor | Guest network (SSID), Guest Wi-Fi (active accesses) | on |
+| sensor | Guest access *name* (expiry, one per access, added and removed automatically) | on |
+| switch | Wi-Fi | on, needs *Modify settings* |
+| button | Reboot, Create guest Wi-Fi | on, needs *Modify settings* |
+
+### Wi-Fi radios (one set per band: 2.4 GHz, 5 GHz)
+
+| Platform | Entity | Default |
+|---|---|---|
+| binary_sensor | Wi-Fi *band* (radio active) | on |
+| sensor | Wi-Fi *band* clients | on |
+| sensor | Wi-Fi *band* network (SSID) | on |
+| sensor | Wi-Fi *band* channel, channel width | on, diagnostic |
+| sensor | Wi-Fi *band* encryption | off, diagnostic |
+
+### Each LAN device (its own device, see below)
+
+| Platform | Entity | Default |
+|---|---|---|
+| device_tracker | presence (`home` / `not_home`) | on |
+| binary_sensor | Connected | on |
+| sensor | IP address | on* |
+| sensor | Connection type (`wifi` / `ethernet`) | on* |
+| sensor | Wi-Fi signal (dBm) | on* |
+| sensor | Download rate, Upload rate (current, seen from the device) | on* |
+| sensor | Wi-Fi band, Wi-Fi network | on*, diagnostic |
+| sensor | Wi-Fi standard | off, diagnostic |
+| sensor | Downloaded data, Uploaded data (current session) | off |
+| sensor | Last activity | off (changes at every poll) |
+| sensor | First seen | off, diagnostic |
+
+\* Enabled only for devices that are online when the integration first sees them; for the others (old devices remembered by the box) they are created disabled, to keep the entity count reasonable. *Connected* and the tracker are always enabled. Wi-Fi values are empty for cabled devices and while a device is offline.
+
+The box is polled every **60 seconds** by default (see [Settings](#settings)), with one request per endpoint regardless of how many devices are on the network.
+
+## Settings
+
+**Settings → Devices & services → Iliadbox → Configure** changes every parameter:
+
+| Setting | Default | Notes |
+|---|---|---|
+| Host | `192.168.1.254` | local IP or hostname of the box |
+| Port | `80` | `443` for HTTPS |
+| Use HTTPS | off | |
+| Verify the certificate | on at setup | turn off for HTTPS by IP address |
+| Polling interval | 60 s | 10-3600 s; shorter = faster presence detection |
+| Log level | Info | Error / Info / Debug |
+
+Connection changes are tested on the box before saving, using the current authorization: no confirmation on the box is needed. The integration reloads after saving.
 
 ### Presence automation example
 
@@ -141,7 +197,7 @@ Reboot, Wi-Fi and guest actions, and guest passwords, are available only to Home
 
 ## LAN devices
 
-Every host listed by the box (connected now or seen before) becomes a Home Assistant device, linked to the box (*Connected via*), with one `device_tracker` entity:
+Every host listed by the box (connected now or seen before) becomes a Home Assistant device, linked to the box (*Connected via*), with a `device_tracker`, a *Connected* binary sensor and the sensors listed in [Entities](#each-lan-device-its-own-device-see-below). The tracker:
 
 - state `home` when the box reports the device as connected, `not_home` otherwise;
 - attributes `ip`, `mac`, `host_name`, `vendor`, `host_type`, `last_activity`.
@@ -195,7 +251,7 @@ data:
 
 ## Logging
 
-**Settings → Devices & services → Iliadbox → Configure → Log level**:
+**Settings → Devices & services → Iliadbox → Configure → Log level** (see [Settings](#settings)):
 
 | Level | What gets logged |
 |---|---|
@@ -214,9 +270,9 @@ The level applies immediately, without restarting. Logs are under **Settings →
 | *Request not confirmed on the box yet* | Accept the request on the box display first, then press Submit. |
 | *Request timed out* | Press Submit to send a new request and accept it within a couple of minutes. |
 | Wi-Fi switch, reboot or guest Wi-Fi fail | Grant the **Modify settings** permission to "Home Assistant" in Access management → Applications. |
-| A LAN device is missing | Devices appear when the box lists them; new ones are added within 30 seconds. |
+| A LAN device is missing | Devices appear when the box lists them; new ones are added at the next poll (60 seconds by default). |
 | Too many old devices | Delete them from the device page (⋮ → Delete). Only devices the box no longer lists can be deleted; the box keeps a history of past devices. |
-| After a box factory reset | The token is erased: accept the re-authorization. The LAN address goes back to `192.168.1.254`: set the old one again on the box, or use **Reconfigure** to point the integration to the new address. |
+| After a box factory reset | The token is erased: accept the re-authorization. The LAN address goes back to `192.168.1.254`: set the old one again on the box, or use **Configure** to point the integration to the new address. |
 
 For a detailed log, set the log level to **Debug** and reproduce the problem.
 

@@ -13,10 +13,13 @@ from homeassistant.config_entries import (
     ConfigFlowResult,
     OptionsFlow,
 )
-from homeassistant.const import CONF_HOST, CONF_PORT, CONF_VERIFY_SSL
+from homeassistant.const import CONF_HOST, CONF_PORT, CONF_SCAN_INTERVAL, CONF_VERIFY_SSL
 from homeassistant.core import callback
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.selector import (
+    NumberSelector,
+    NumberSelectorConfig,
+    NumberSelectorMode,
     SelectSelector,
     SelectSelectorConfig,
     SelectSelectorMode,
@@ -30,9 +33,12 @@ from .const import (
     DEFAULT_HOST,
     DEFAULT_LOG_LEVEL,
     DEFAULT_PORT,
+    DEFAULT_SCAN_INTERVAL,
     DEFAULT_SSL_PORT,
     DOMAIN,
     LOG_LEVELS,
+    MAX_SCAN_INTERVAL,
+    MIN_SCAN_INTERVAL,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -222,20 +228,74 @@ class IliadboxConfigFlow(ConfigFlow, domain=DOMAIN):
 
 
 class IliadboxOptionsFlow(OptionsFlow):
-    """Options: integration log level."""
+    """Every setting: connection, polling interval and log level.
+
+    Connection changes are checked against the box with the current token
+    before saving. The entry reloads after saving.
+    """
 
     async def async_step_init(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
+        entry = self.config_entry
+        errors: dict[str, str] = {}
         if user_input is not None:
-            return self.async_create_entry(data=user_input)
+            connection = {
+                CONF_HOST: user_input[CONF_HOST].strip(),
+                CONF_PORT: user_input[CONF_PORT],
+                CONF_USE_SSL: user_input[CONF_USE_SSL],
+                CONF_VERIFY_SSL: user_input[CONF_VERIFY_SSL],
+            }
+            if connection[CONF_USE_SSL] and connection[CONF_PORT] == DEFAULT_PORT:
+                connection[CONF_PORT] = DEFAULT_SSL_PORT
+            changed = any(entry.data.get(k) != v for k, v in connection.items())
+            if changed:
+                errors = await self._async_check_connection(connection)
+            if not errors:
+                if changed:
+                    _LOGGER.info(
+                        "Connection changed to %s:%s (HTTPS %s, certificate check %s)",
+                        connection[CONF_HOST],
+                        connection[CONF_PORT],
+                        "on" if connection[CONF_USE_SSL] else "off",
+                        "on" if connection[CONF_USE_SSL] and connection[CONF_VERIFY_SSL] else "off",
+                    )
+                    self.hass.config_entries.async_update_entry(
+                        entry, data={**entry.data, **connection}
+                    )
+                return self.async_create_entry(
+                    data={
+                        CONF_SCAN_INTERVAL: int(user_input[CONF_SCAN_INTERVAL]),
+                        CONF_LOG_LEVEL: user_input[CONF_LOG_LEVEL],
+                    }
+                )
 
-        current = self.config_entry.options.get(CONF_LOG_LEVEL, DEFAULT_LOG_LEVEL)
+        current = {**entry.data, **entry.options, **(user_input or {})}
         return self.async_show_form(
             step_id="init",
             data_schema=vol.Schema(
                 {
-                    vol.Required(CONF_LOG_LEVEL, default=current): SelectSelector(
+                    vol.Required(CONF_HOST, default=current[CONF_HOST]): str,
+                    vol.Required(CONF_PORT, default=current[CONF_PORT]): int,
+                    vol.Required(CONF_USE_SSL, default=current.get(CONF_USE_SSL, False)): bool,
+                    vol.Required(
+                        CONF_VERIFY_SSL, default=current.get(CONF_VERIFY_SSL, False)
+                    ): bool,
+                    vol.Required(
+                        CONF_SCAN_INTERVAL,
+                        default=current.get(CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL),
+                    ): NumberSelector(
+                        NumberSelectorConfig(
+                            min=MIN_SCAN_INTERVAL,
+                            max=MAX_SCAN_INTERVAL,
+                            step=5,
+                            unit_of_measurement="s",
+                            mode=NumberSelectorMode.BOX,
+                        )
+                    ),
+                    vol.Required(
+                        CONF_LOG_LEVEL, default=current.get(CONF_LOG_LEVEL, DEFAULT_LOG_LEVEL)
+                    ): SelectSelector(
                         SelectSelectorConfig(
                             options=LOG_LEVELS,
                             translation_key=CONF_LOG_LEVEL,
@@ -244,4 +304,34 @@ class IliadboxOptionsFlow(OptionsFlow):
                     ),
                 }
             ),
+            errors=errors,
         )
+
+    async def _async_check_connection(self, connection: dict[str, Any]) -> dict[str, str]:
+        """Reach the box with the new settings and the current token."""
+        entry = self.config_entry
+        verify = connection[CONF_USE_SSL] and connection[CONF_VERIFY_SSL]
+        client = IliadboxClient(
+            async_get_clientsession(self.hass, verify_ssl=verify),
+            connection[CONF_HOST],
+            connection[CONF_PORT],
+            connection[CONF_USE_SSL],
+            entry.data[CONF_APP_TOKEN],
+            connection[CONF_VERIFY_SSL],
+        )
+        try:
+            info = await client.discover()
+            if entry.unique_id and info.get("uid") and info["uid"] != entry.unique_id:
+                _LOGGER.error("Box at %s is not the configured one", connection[CONF_HOST])
+                return {"base": "wrong_box"}
+            await client.open_session()
+        except IliadboxSSLError as err:
+            _LOGGER.error("Certificate of %s rejected: %s", connection[CONF_HOST], err)
+            return {"base": "ssl_error"}
+        except IliadboxConnectionError as err:
+            _LOGGER.error("Cannot reach box at %s: %s", connection[CONF_HOST], err)
+            return {"base": "cannot_connect"}
+        except IliadboxError as err:
+            _LOGGER.error("Stored token rejected by %s: %s", connection[CONF_HOST], err)
+            return {"base": "invalid_auth"}
+        return {}

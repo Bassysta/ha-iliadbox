@@ -8,13 +8,12 @@ from typing import Any
 from homeassistant.components.device_tracker import ScannerEntity
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers import entity_registry as er
-from homeassistant.helpers.device_registry import CONNECTION_NETWORK_MAC, DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from homeassistant.util import dt as dt_util
 
-from .const import DOMAIN
 from .coordinator import IliadboxConfigEntry, IliadboxCoordinator
+from .entity import box_id, host_device_info
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -67,18 +66,8 @@ class IliadboxTracker(CoordinatorEntity[IliadboxCoordinator], ScannerEntity):
     def __init__(self, coordinator: IliadboxCoordinator, mac: str) -> None:
         super().__init__(coordinator)
         self._mac = mac
-        box_id = coordinator.config_entry.unique_id or coordinator.config_entry.entry_id
-        self._attr_unique_id = f"{box_id}_{mac}"
-        host = self._host
-        # default_* so a device already created by another integration
-        # (same MAC) keeps its own name and manufacturer
-        self._attr_device_info = DeviceInfo(
-            connections={(CONNECTION_NETWORK_MAC, mac)},
-            default_name=host.get("primary_name") or mac,
-            default_manufacturer=host.get("vendor_name") or None,
-            default_model=host.get("host_type") or None,
-            via_device=(DOMAIN, box_id),
-        )
+        self._attr_unique_id = f"{box_id(coordinator)}_{mac}"
+        self._attr_device_info = host_device_info(coordinator, mac)
 
     @property
     def _host(self) -> dict[str, Any]:

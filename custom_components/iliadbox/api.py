@@ -204,13 +204,39 @@ class IliadboxClient:
         _LOGGER.info("Turning Wi-Fi %s", "on" if enabled else "off")
         await self._request("PUT", "wifi/config/", json={"enabled": enabled})
 
-    async def get_guest_ssid(self) -> str | None:
-        """SSID of the guest network; the BSS payload also holds Wi-Fi keys, drop them."""
-        for bss in await self._request("GET", "wifi/bss/") or []:
-            ssid = (bss.get("status") or {}).get("custom_key_ssid")
-            if ssid:
-                return ssid
-        return None
+    async def get_wifi_radios(self) -> list[dict[str, Any]]:
+        """One summary per radio, merging BSS and AP status.
+
+        The BSS payload also holds the Wi-Fi keys: only the fields listed here
+        are kept, so keys never reach Home Assistant state or logs.
+        """
+        bss_list, aps = await asyncio.gather(
+            self._request("GET", "wifi/bss/"), self._request("GET", "wifi/ap/")
+        )
+        aps_by_id = {ap.get("id"): ap.get("status") or {} for ap in aps or []}
+        radios = []
+        for bss in bss_list or []:
+            status = bss.get("status") or {}
+            params = (
+                bss.get("shared_bss_params")
+                if bss.get("use_shared_params")
+                else bss.get("bss_params")
+            ) or {}
+            ap = aps_by_id.get(bss.get("phy_id"), {})
+            radios.append(
+                {
+                    "band": status.get("band"),
+                    "state": status.get("state"),
+                    "ssid": params.get("ssid"),
+                    "hidden": params.get("hide_ssid"),
+                    "encryption": params.get("encryption"),
+                    "clients": status.get("sta_count"),
+                    "guest_ssid": status.get("custom_key_ssid"),
+                    "channel": ap.get("primary_channel"),
+                    "channel_width": ap.get("channel_width"),
+                }
+            )
+        return radios
 
     async def get_guest_keys(self) -> list[dict[str, Any]]:
         return await self._request("GET", "wifi/custom_key/") or []

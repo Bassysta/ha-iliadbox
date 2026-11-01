@@ -46,7 +46,9 @@ def _apply_log_level(entry: IliadboxConfigEntry) -> None:
 async def _async_options_updated(
     hass: HomeAssistant, entry: IliadboxConfigEntry
 ) -> None:
+    """Options or connection changed: reload to apply polling and connection."""
     _apply_log_level(entry)
+    await hass.config_entries.async_reload(entry.entry_id)
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: IliadboxConfigEntry) -> bool:

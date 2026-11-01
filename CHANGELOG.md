@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.7.0
+
+- **Every value is an entity.** New box entities: connection state and type, IPv4 port range, firmware, serial, MAC, board, disk status, Wi-Fi power saving, MAC filter, guest network, connected/known devices, total Wi-Fi clients.
+- **Wi-Fi radios** (2.4 / 5 GHz): active, clients, network, channel, channel width, encryption.
+- **Each LAN device**: Connected, IP address, connection type, Wi-Fi signal, band, network, standard, download/upload rate, session traffic, last activity, first seen.
+- **Each guest access**: expiry sensor, added and removed automatically.
+- **Configure** now changes every setting: host, port, HTTPS, certificate check, polling interval and log level. Connection changes are tested before saving.
+- Default polling interval is now **60 seconds** (configurable 10-3600 s).
+
 ## 0.6.0
 
 - Every LAN device is now a Home Assistant device with its tracker, enabled by default. Trackers created disabled by earlier versions are enabled automatically.

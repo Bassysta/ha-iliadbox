@@ -57,14 +57,31 @@
   "options": {
     "step": {
       "init": {
-        "title": "Iliadbox options",
+        "title": "Iliadbox settings",
+        "description": "Connection changes are tested on the box before saving. The integration reloads after saving; no new authorization is needed.",
         "data": {
+          "host": "Host",
+          "port": "Port",
+          "use_ssl": "Use HTTPS",
+          "verify_ssl": "Verify the certificate",
+          "scan_interval": "Polling interval",
           "log_level": "Log level"
         },
         "data_description": {
+          "host": "Local IP address or hostname of the box.",
+          "port": "80 for HTTP, 443 for HTTPS. With HTTPS on, port 80 is changed to 443 automatically.",
+          "use_ssl": "Encrypt the traffic between Home Assistant and the box.",
+          "verify_ssl": "Only with HTTPS. Turn it off to accept the box self-signed certificate, or when connecting by IP address.",
+          "scan_interval": "How often the box is read, in seconds (10-3600). Shorter means faster presence detection and more requests to the box.",
           "log_level": "Error: failures only. Info: also connections, Wi-Fi and device presence changes. Debug: also every API call."
         }
       }
+    },
+    "error": {
+      "cannot_connect": "Cannot reach the box with these settings.",
+      "ssl_error": "The box certificate could not be verified. Turn off \"Verify the certificate\" to accept the self-signed certificate (needed when connecting by IP address).",
+      "invalid_auth": "The box rejected the current authorization at this address.",
+      "wrong_box": "This address belongs to a different box than the configured one."
     }
   },
   "selector": {
@@ -133,7 +150,11 @@
       "create_guest_wifi": { "name": "Create guest Wi-Fi" }
     },
     "binary_sensor": {
-      "wan_connected": { "name": "Internet connection" }
+      "wan_connected": { "name": "Internet connection" },
+      "wifi_power_saving": { "name": "Wi-Fi power saving" },
+      "box_authenticated": { "name": "Box authenticated" },
+      "radio_active": { "name": "Wi-Fi {band}" },
+      "host_connected": { "name": "Connected" }
     },
     "sensor": {
       "rate_down": { "name": "Download rate" },
@@ -146,7 +167,37 @@
       "ipv6": { "name": "Public IPv6" },
       "media": { "name": "Line type" },
       "uptime": { "name": "Uptime" },
-      "guest_wifi": { "name": "Guest Wi-Fi", "unit_of_measurement": "accesses" }
+      "guest_wifi": { "name": "Guest Wi-Fi", "unit_of_measurement": "accesses" },
+      "connection_state": { "name": "Connection state" },
+      "connection_type": { "name": "Connection type" },
+      "ipv4_port_range": { "name": "IPv4 port range" },
+      "firmware": { "name": "Firmware" },
+      "serial": { "name": "Serial number" },
+      "mac": { "name": "MAC address" },
+      "board": { "name": "Board" },
+      "disk_status": { "name": "Disk status" },
+      "wifi_mac_filter": { "name": "Wi-Fi MAC filter" },
+      "guest_ssid": { "name": "Guest network" },
+      "connected_devices": { "name": "Connected devices", "unit_of_measurement": "devices" },
+      "known_devices": { "name": "Known devices", "unit_of_measurement": "devices" },
+      "wifi_clients": { "name": "Wi-Fi clients", "unit_of_measurement": "clients" },
+      "radio_clients": { "name": "Wi-Fi {band} clients", "unit_of_measurement": "clients" },
+      "radio_ssid": { "name": "Wi-Fi {band} network" },
+      "radio_channel": { "name": "Wi-Fi {band} channel" },
+      "radio_channel_width": { "name": "Wi-Fi {band} channel width" },
+      "radio_encryption": { "name": "Wi-Fi {band} encryption" },
+      "host_ip": { "name": "IP address" },
+      "host_link": { "name": "Connection type" },
+      "host_wifi_signal": { "name": "Wi-Fi signal" },
+      "host_wifi_band": { "name": "Wi-Fi band" },
+      "host_wifi_ssid": { "name": "Wi-Fi network" },
+      "host_wifi_standard": { "name": "Wi-Fi standard" },
+      "host_rate_down": { "name": "Download rate" },
+      "host_rate_up": { "name": "Upload rate" },
+      "host_bytes_down": { "name": "Downloaded data" },
+      "host_bytes_up": { "name": "Uploaded data" },
+      "host_last_activity": { "name": "Last activity" },
+      "host_first_activity": { "name": "First seen" }
     },
     "switch": {
       "wifi": { "name": "Wi-Fi" }

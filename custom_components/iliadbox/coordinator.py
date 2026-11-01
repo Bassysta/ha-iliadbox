@@ -4,16 +4,18 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from datetime import timedelta
 from typing import Any
 
 from homeassistant.config_entries import ConfigEntry
+from homeassistant.const import CONF_SCAN_INTERVAL
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryAuthFailed
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
 from .api import IliadboxAuthError, IliadboxClient, IliadboxError
-from .const import DOMAIN, SCAN_INTERVAL
+from .const import DEFAULT_SCAN_INTERVAL, DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -28,14 +30,16 @@ class IliadboxCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     def __init__(
         self, hass: HomeAssistant, entry: IliadboxConfigEntry, client: IliadboxClient
     ) -> None:
+        interval = entry.options.get(CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL)
         super().__init__(
             hass,
             _LOGGER,
             config_entry=entry,
             name=DOMAIN,
-            update_interval=SCAN_INTERVAL,
+            update_interval=timedelta(seconds=interval),
         )
         self.client = client
+        _LOGGER.debug("Polling the box every %s seconds", interval)
 
     async def _async_update_data(self) -> dict[str, Any]:
         try:
@@ -52,14 +56,16 @@ class IliadboxCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             # DataUpdateCoordinator logs this once and logs again on recovery
             raise UpdateFailed(str(err)) from err
 
-        # Guest Wi-Fi is optional: a failure here must not mark the box unavailable
+        # Wi-Fi radios and guest accesses are optional: a failure here must not
+        # mark the box unavailable
         try:
-            guest_keys, guest_ssid = await asyncio.gather(
-                self.client.get_guest_keys(), self.client.get_guest_ssid()
+            guest_keys, radios = await asyncio.gather(
+                self.client.get_guest_keys(), self.client.get_wifi_radios()
             )
         except IliadboxError as err:
-            _LOGGER.debug("Guest Wi-Fi data unavailable: %s", err)
-            guest_keys, guest_ssid = [], None
+            _LOGGER.debug("Wi-Fi radio or guest data unavailable: %s", err)
+            guest_keys, radios = [], []
+        guest_ssid = next((r["guest_ssid"] for r in radios if r.get("guest_ssid")), None)
 
         connection = connection or {}
         hosts_by_mac = {
@@ -82,6 +88,7 @@ class IliadboxCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             "hosts": hosts_by_mac,
             "wifi": wifi or {},
             "guest": {"ssid": guest_ssid, "keys": guest_keys},
+            "radios": {r["band"]: r for r in radios if r.get("band")},
         }
 
     def _log_changes(
