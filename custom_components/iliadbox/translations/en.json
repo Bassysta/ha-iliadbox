@@ -1,0 +1,154 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Connect the Iliadbox",
+        "description": "Local address of the box, e.g. 192.168.1.254. Home Assistant must be on the box network.",
+        "data": {
+          "host": "Host",
+          "port": "Port",
+          "use_ssl": "Use HTTPS",
+          "verify_ssl": "Verify the certificate"
+        },
+        "data_description": {
+          "host": "Local IP address or hostname of the box.",
+          "port": "80 for HTTP, 443 for HTTPS. With HTTPS on, port 80 is changed to 443 automatically.",
+          "use_ssl": "Encrypt the traffic between Home Assistant and the box.",
+          "verify_ssl": "Only with HTTPS. Turn it off to accept the box self-signed certificate, or when connecting by IP address (the certificate is issued for a hostname, not for the IP)."
+        }
+      },
+      "reconfigure": {
+        "title": "Change the Iliadbox connection",
+        "description": "Update address, port or HTTPS settings. The current authorization is kept.",
+        "data": {
+          "host": "Host",
+          "port": "Port",
+          "use_ssl": "Use HTTPS",
+          "verify_ssl": "Verify the certificate"
+        },
+        "data_description": {
+          "host": "Local IP address or hostname of the box.",
+          "port": "80 for HTTP, 443 for HTTPS. With HTTPS on, port 80 is changed to 443 automatically.",
+          "use_ssl": "Encrypt the traffic between Home Assistant and the box.",
+          "verify_ssl": "Only with HTTPS. Turn it off to accept the box self-signed certificate, or when connecting by IP address (the certificate is issued for a hostname, not for the IP)."
+        }
+      },
+      "link": {
+        "title": "Authorize Home Assistant",
+        "description": "An access request for \"Home Assistant\" appeared on the Iliadbox ({host}) display: accept it with the box button, then press Submit.\n\nAfterwards, in myiliadbox → Access management → Applications you can grant the \"Modify settings\" permission (needed for the Wi-Fi switch and reboot)."
+      }
+    },
+    "error": {
+      "cannot_connect": "Cannot reach the box.",
+      "ssl_error": "The box certificate could not be verified. Turn off \"Verify the certificate\" to accept the self-signed certificate (needed when connecting by IP address).",
+      "invalid_auth": "The box rejected the current authorization. Remove and add the integration again.",
+      "not_confirmed": "Request not confirmed on the box yet.",
+      "auth_denied": "Request denied on the box. Press Submit to create a new one.",
+      "auth_timeout": "Request timed out. Press Submit to create a new one.",
+      "unknown": "Unexpected error."
+    },
+    "abort": {
+      "already_configured": "This box is already configured.",
+      "reauth_successful": "Re-authorization successful.",
+      "reconfigure_successful": "Connection updated.",
+      "wrong_box": "This address belongs to a different box than the configured one."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Iliadbox options",
+        "data": {
+          "log_level": "Log level"
+        },
+        "data_description": {
+          "log_level": "Error: failures only. Info: also connections, Wi-Fi and device presence changes. Debug: also every API call."
+        }
+      }
+    }
+  },
+  "selector": {
+    "log_level": {
+      "options": {
+        "error": "Error",
+        "info": "Info",
+        "debug": "Debug"
+      }
+    },
+    "access_type": {
+      "options": {
+        "net_only": "Internet only",
+        "full": "Full network (internet and home devices)"
+      }
+    }
+  },
+  "services": {
+    "create_guest_wifi": {
+      "name": "Create guest Wi-Fi",
+      "description": "Creates a guest access on the Iliadbox guest network. The password is returned in the response and shown in a notification.",
+      "fields": {
+        "config_entry_id": {
+          "name": "Box",
+          "description": "Needed only when several Iliadbox are configured."
+        },
+        "description": {
+          "name": "Description",
+          "description": "Name of the access, e.g. who it is for."
+        },
+        "password": {
+          "name": "Password",
+          "description": "8-63 characters. Leave empty to generate a random one."
+        },
+        "duration_hours": {
+          "name": "Duration",
+          "description": "Hours before the access expires."
+        },
+        "max_devices": {
+          "name": "Max devices",
+          "description": "How many devices can use the access. 0 = unlimited."
+        },
+        "access_type": {
+          "name": "Access type",
+          "description": "Internet only, or also the devices of the home network."
+        }
+      }
+    },
+    "delete_guest_wifi": {
+      "name": "Delete guest Wi-Fi",
+      "description": "Revokes a guest access.",
+      "fields": {
+        "config_entry_id": {
+          "name": "Box",
+          "description": "Needed only when several Iliadbox are configured."
+        },
+        "access_id": {
+          "name": "Access ID",
+          "description": "ID of the access, shown in the panel and in the create response."
+        }
+      }
+    }
+  },
+  "entity": {
+    "button": {
+      "create_guest_wifi": { "name": "Create guest Wi-Fi" }
+    },
+    "binary_sensor": {
+      "wan_connected": { "name": "Internet connection" }
+    },
+    "sensor": {
+      "rate_down": { "name": "Download rate" },
+      "rate_up": { "name": "Upload rate" },
+      "bandwidth_down": { "name": "Download bandwidth" },
+      "bandwidth_up": { "name": "Upload bandwidth" },
+      "bytes_down": { "name": "Downloaded data" },
+      "bytes_up": { "name": "Uploaded data" },
+      "ipv4": { "name": "Public IP" },
+      "ipv6": { "name": "Public IPv6" },
+      "media": { "name": "Line type" },
+      "uptime": { "name": "Uptime" }
+    },
+    "switch": {
+      "wifi": { "name": "Wi-Fi" }
+    }
+  }
+}

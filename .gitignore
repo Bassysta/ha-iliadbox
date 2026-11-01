@@ -1,0 +1,11 @@
+__pycache__/
+*.py[cod]
+.venv/
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Local test material: never commit tokens or box dumps
+app_token.json
+dump/
