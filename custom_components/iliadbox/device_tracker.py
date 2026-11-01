@@ -1,4 +1,4 @@
-"""LAN device trackers for the Iliadbox."""
+"""LAN device trackers for the Iliadbox: one HA device per host seen by the box."""
 
 from __future__ import annotations
 
@@ -7,13 +7,32 @@ from typing import Any
 
 from homeassistant.components.device_tracker import ScannerEntity
 from homeassistant.core import HomeAssistant, callback
+from homeassistant.helpers import entity_registry as er
+from homeassistant.helpers.device_registry import CONNECTION_NETWORK_MAC, DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from homeassistant.util import dt as dt_util
 
+from .const import DOMAIN
 from .coordinator import IliadboxConfigEntry, IliadboxCoordinator
 
 _LOGGER = logging.getLogger(__name__)
+
+
+@callback
+def _enable_trackers_disabled_by_integration(hass: HomeAssistant, entry: IliadboxConfigEntry) -> None:
+    """Before 0.6.0 trackers of unknown devices were created disabled: enable them.
+
+    Trackers disabled by the user are left alone.
+    """
+    registry = er.async_get(hass)
+    for reg_entry in er.async_entries_for_config_entry(registry, entry.entry_id):
+        if (
+            reg_entry.domain == "device_tracker"
+            and reg_entry.disabled_by is er.RegistryEntryDisabler.INTEGRATION
+        ):
+            registry.async_update_entity(reg_entry.entity_id, disabled_by=None)
+            _LOGGER.info("Enabled tracker %s", reg_entry.entity_id)
 
 
 async def async_setup_entry(
@@ -22,6 +41,7 @@ async def async_setup_entry(
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     coordinator = entry.runtime_data
+    _enable_trackers_disabled_by_integration(hass, entry)
     tracked: set[str] = set()
 
     @callback
@@ -37,14 +57,28 @@ async def async_setup_entry(
 
 
 class IliadboxTracker(CoordinatorEntity[IliadboxCoordinator], ScannerEntity):
-    """A host seen by the box on the LAN."""
+    """A host seen by the box on the LAN, with its own device."""
+
+    _attr_has_entity_name = True
+    _attr_name = None  # the entity takes the device name
+    # ScannerEntity defaults to disabled; every LAN device is wanted for automations
+    _attr_entity_registry_enabled_default = True
 
     def __init__(self, coordinator: IliadboxCoordinator, mac: str) -> None:
         super().__init__(coordinator)
         self._mac = mac
-        self._attr_unique_id = f"{coordinator.config_entry.unique_id}_{mac}"
+        box_id = coordinator.config_entry.unique_id or coordinator.config_entry.entry_id
+        self._attr_unique_id = f"{box_id}_{mac}"
         host = self._host
-        self._attr_name = host.get("primary_name") or mac
+        # default_* so a device already created by another integration
+        # (same MAC) keeps its own name and manufacturer
+        self._attr_device_info = DeviceInfo(
+            connections={(CONNECTION_NETWORK_MAC, mac)},
+            default_name=host.get("primary_name") or mac,
+            default_manufacturer=host.get("vendor_name") or None,
+            default_model=host.get("host_type") or None,
+            via_device=(DOMAIN, box_id),
+        )
 
     @property
     def _host(self) -> dict[str, Any]:

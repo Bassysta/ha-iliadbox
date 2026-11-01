@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.6.0
+
+- Every LAN device is now a Home Assistant device with its tracker, enabled by default. Trackers created disabled by earlier versions are enabled automatically.
+- Devices the box no longer lists can be deleted from the UI.
+- New dashboard card `custom:iliadbox-guest-card` to create, show and revoke guest Wi-Fi accesses.
+- New sensor *Guest Wi-Fi*: number of active accesses, with network name and access list (no passwords).
+
 ## 0.5.1
 
 - Integration icon in `brand/`, shown by Home Assistant 2026.3+.

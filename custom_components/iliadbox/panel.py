@@ -50,7 +50,10 @@ async def async_register_panel(hass: HomeAssistant) -> None:
         websocket_api.async_register_command(hass, ws_reboot)
         websocket_api.async_register_command(hass, ws_create_guest)
         websocket_api.async_register_command(hass, ws_delete_guest)
+        # Dashboard card, loaded on every dashboard
+        frontend.add_extra_js_url(hass, f"{STATIC_URL}/iliadbox-guest-card.js?v={APP_VERSION}")
         hass.data[DATA_STATIC] = True
+        _LOGGER.debug("Guest Wi-Fi card registered")
 
     if hass.data.get(DATA_PANEL):
         return

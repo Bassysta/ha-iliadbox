@@ -10,6 +10,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryAuthFailed, ConfigEntryNotReady
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
+from homeassistant.helpers.device_registry import CONNECTION_NETWORK_MAC, DeviceEntry
 from homeassistant.helpers.typing import ConfigType
 
 from .api import IliadboxAuthError, IliadboxClient, IliadboxError
@@ -101,3 +102,20 @@ async def async_unload_entry(hass: HomeAssistant, entry: IliadboxConfigEntry) ->
         async_unregister_panel(hass)
     _LOGGER.debug("Unloaded entry %s (success=%s)", entry.title, unloaded)
     return unloaded
+
+
+async def async_remove_config_entry_device(
+    hass: HomeAssistant, entry: IliadboxConfigEntry, device_entry: DeviceEntry
+) -> bool:
+    """Allow deleting a LAN device from the UI, unless the box still lists it.
+
+    The box device itself can never be deleted this way.
+    """
+    if any(identifier[0] == DOMAIN for identifier in device_entry.identifiers):
+        return False
+    hosts = entry.runtime_data.data["hosts"]
+    macs = {mac for kind, mac in device_entry.connections if kind == CONNECTION_NETWORK_MAC}
+    still_listed = any(mac.lower() in hosts for mac in macs)
+    if not still_listed:
+        _LOGGER.info("Device %s removed by the user", device_entry.name)
+    return not still_listed

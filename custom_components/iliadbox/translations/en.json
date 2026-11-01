@@ -145,7 +145,8 @@
       "ipv4": { "name": "Public IP" },
       "ipv6": { "name": "Public IPv6" },
       "media": { "name": "Line type" },
-      "uptime": { "name": "Uptime" }
+      "uptime": { "name": "Uptime" },
+      "guest_wifi": { "name": "Guest Wi-Fi", "unit_of_measurement": "accesses" }
     },
     "switch": {
       "wifi": { "name": "Wi-Fi" }

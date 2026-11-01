@@ -12,7 +12,7 @@ Custom integration for the **Iliadbox** (the Italian Iliad router, a rebranded F
 ## Features
 
 - **Sensors**: internet connection state, download/upload rate, line bandwidth, transferred data, public IPv4/IPv6, line type, uptime, temperatures, fan speed.
-- **Presence detection**: one `device_tracker` per device seen on the LAN (`home` / `not_home`).
+- **Presence detection**: every device seen on the LAN becomes a Home Assistant **device** with a `device_tracker` (`home` / `not_home`), ready for automations.
 - **Controls**: Wi-Fi on/off switch, reboot button.
 - **Guest Wi-Fi**: create and revoke guest accesses with description, password, duration, max devices and access type. Available from the panel, from a button and as actions for automations.
 - **Sidebar panel**: one page with connection, box status, Wi-Fi, guest accesses and the searchable device list.
@@ -102,7 +102,8 @@ The access token is stored in the Home Assistant config entry. If you revoke it 
 | switch | Wi-Fi | needs *Modify settings* |
 | button | Reboot | needs *Modify settings* |
 | button | Create guest Wi-Fi | defaults, see below |
-| device_tracker | one per LAN device | trackers of devices unknown to HA start disabled |
+| device_tracker | one per LAN device | each in its own device, enabled |
+| sensor | Guest Wi-Fi | number of active guest accesses; attributes: network name and accesses (no passwords) |
 
 Data is polled every 30 seconds with a single request per endpoint, regardless of how many devices are on the network.
 
@@ -138,6 +139,17 @@ Reboot, Wi-Fi and guest actions, and guest passwords, are available only to Home
 
 <p align="center"><img src="docs/images/mobile.png" alt="Panel on a phone" width="320"></p>
 
+## LAN devices
+
+Every host listed by the box (connected now or seen before) becomes a Home Assistant device, linked to the box (*Connected via*), with one `device_tracker` entity:
+
+- state `home` when the box reports the device as connected, `not_home` otherwise;
+- attributes `ip`, `mac`, `host_name`, `vendor`, `host_type`, `last_activity`.
+
+If a device with the same MAC address already exists in Home Assistant (e.g. created by Shelly, ESPHome or a phone app), the tracker is added to that device instead of creating a new one, and its name is kept.
+
+Trackers created disabled by versions before 0.6.0 are enabled automatically; trackers you disabled yourself stay disabled.
+
 ## Guest Wi-Fi
 
 Guest accesses use the box guest network (`iliadbox-XXXXXX-ospite`). Each access has its own password and expiry.
@@ -153,6 +165,14 @@ Guest accesses use the box guest network (`iliadbox-XXXXXX-ospite`). Each access
 | Access type | Internet only | `net_only` (internet only) or `full` (internet and home devices) |
 
 - **Panel**: every field is required and validated; *Create guest Wi-Fi* stays disabled until all are valid. After creation the network name and password are shown, with a *Copy password* button. Active accesses can be revoked from the list.
+- **Dashboard card** `custom:iliadbox-guest-card` (admins): the same form, password display and access list as the panel, inside any dashboard or popup. It is loaded automatically by the integration, no resource to add:
+
+  ```yaml
+  type: custom:iliadbox-guest-card
+  title: Guest Wi-Fi   # optional
+  ```
+
+  It also appears in the card picker as *Iliadbox guest Wi-Fi*. Works with `card_mod` for custom styling.
 - **Button** `Create guest Wi-Fi`: one press, all defaults, description "Guests". The password is shown in a Home Assistant notification.
 - **Actions** for automations and scripts:
 
@@ -194,7 +214,8 @@ The level applies immediately, without restarting. Logs are under **Settings →
 | *Request not confirmed on the box yet* | Accept the request on the box display first, then press Submit. |
 | *Request timed out* | Press Submit to send a new request and accept it within a couple of minutes. |
 | Wi-Fi switch, reboot or guest Wi-Fi fail | Grant the **Modify settings** permission to "Home Assistant" in Access management → Applications. |
-| A device tracker is missing | Trackers of devices unknown to HA are created disabled: enable them from the entity settings. |
+| A LAN device is missing | Devices appear when the box lists them; new ones are added within 30 seconds. |
+| Too many old devices | Delete them from the device page (⋮ → Delete). Only devices the box no longer lists can be deleted; the box keeps a history of past devices. |
 | After a box factory reset | The token is erased: accept the re-authorization. The LAN address goes back to `192.168.1.254`: set the old one again on the box, or use **Reconfigure** to point the integration to the new address. |
 
 For a detailed log, set the log level to **Debug** and reproduce the problem.

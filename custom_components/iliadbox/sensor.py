@@ -152,6 +152,7 @@ async def async_setup_entry(
         IliadboxFanSensor(coordinator, f["id"], _english_name(f["id"]))
         for f in coordinator.data["system"].get("fans", [])
     )
+    entities.append(IliadboxGuestSensor(coordinator, "guest_wifi"))
     async_add_entities(entities)
 
 
@@ -205,3 +206,37 @@ class IliadboxFanSensor(IliadboxEntity, SensorEntity):
             if f["id"] == self._fan_id:
                 return f.get("value")
         return None
+
+
+class IliadboxGuestSensor(IliadboxEntity, SensorEntity):
+    """Number of active guest Wi-Fi accesses.
+
+    Attributes never contain passwords: entity states are visible to every
+    user and stored in history. Admins get passwords from the panel or card.
+    """
+
+    _attr_translation_key = "guest_wifi"
+    _attr_icon = "mdi:wifi-star"
+    _attr_state_class = SensorStateClass.MEASUREMENT
+    _unrecorded_attributes = frozenset({"accesses"})
+
+    @property
+    def native_value(self) -> int:
+        return len(self.coordinator.data["guest"]["keys"])
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        guest = self.coordinator.data["guest"]
+        return {
+            "ssid": guest["ssid"],
+            "accesses": [
+                {
+                    "id": k["id"],
+                    "description": k["params"].get("description"),
+                    "access_type": k["params"].get("access_type"),
+                    "max_devices": k["params"].get("max_use_count") or "unlimited",
+                    "remaining_seconds": k.get("remaining"),
+                }
+                for k in guest["keys"]
+            ],
+        }
