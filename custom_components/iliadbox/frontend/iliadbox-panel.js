@@ -113,6 +113,9 @@ const STYLE = `
   .dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
   .muted { color: var(--secondary-text-color); }
   .error { padding: 12px 16px; margin-bottom: 16px; border-radius: 8px; color: #fff; background: var(--error-color, #db4437); }
+  .warn { padding: 12px 16px; margin-bottom: 16px; border-radius: 8px; line-height: 1.5;
+    border: 1px solid var(--warning-color, #ffa600); background: rgba(255, 166, 0, 0.12); }
+  .warn a { color: var(--primary-color); }
   .guest { margin-bottom: 16px; }
   #guest-form { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; margin-bottom: 16px; }
   #guest-form[hidden] { display: none; }
@@ -550,8 +553,16 @@ class IliadboxPanel extends HTMLElement {
           const unavailable = box.available
             ? ""
             : `<div class="error">Last update failed: data may be stale.</div>`;
+          const permission = box.can_modify === false
+            ? `<div class="warn"><b>Read-only:</b> the box does not give Home Assistant the
+                "Modify settings" permission, so Wi-Fi, reboot and guest Wi-Fi actions fail.
+                To fix it, open <a href="http://${esc(box.host)}" target="_blank" rel="noopener">http://${esc(box.host)}</a>,
+                go to <b>Access management → Applications → Home Assistant</b>, enable
+                <b>Modify settings</b> and save. This notice disappears by itself within a minute.</div>`
+            : "";
           return `
             ${unavailable}
+            ${permission}
             <div class="grid">
               <div class="card">
                 <h2>Connection <span class="badge ${up ? "ok" : "ko"}">${up ? "Online" : esc(c.state || "Offline")}</span></h2>

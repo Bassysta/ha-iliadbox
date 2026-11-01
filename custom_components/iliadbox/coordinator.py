@@ -12,6 +12,7 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_SCAN_INTERVAL
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryAuthFailed
+from homeassistant.helpers import issue_registry as ir
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
@@ -58,6 +59,15 @@ class IliadboxCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             # DataUpdateCoordinator logs this once and logs again on recovery
             raise UpdateFailed(str(err)) from err
 
+        # Permissions only change with a new session: while "settings" is missing,
+        # open one at each poll so a permission granted on the box is picked up
+        if "settings" not in self.client.permissions:
+            try:
+                await self.client.open_session()
+            except IliadboxError as err:
+                _LOGGER.debug("Cannot refresh permissions: %s", err)
+        self._update_permission_issue()
+
         # Wi-Fi radios and guest accesses are optional: a failure here must not
         # mark the box unavailable
         try:
@@ -101,6 +111,25 @@ class IliadboxCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             "guest": {"ssid": guest_ssid, "keys": guest_keys},
             "radios": {r["band"]: r for r in radios if r.get("band")},
         }
+
+    def _update_permission_issue(self) -> None:
+        """Repair issue while the app lacks "Modify settings" on the box."""
+        issue_id = f"missing_settings_{self.config_entry.entry_id}"
+        if "settings" in self.client.permissions:
+            ir.async_delete_issue(self.hass, DOMAIN, issue_id)
+            return
+        ir.async_create_issue(
+            self.hass,
+            DOMAIN,
+            issue_id,
+            is_fixable=False,
+            severity=ir.IssueSeverity.WARNING,
+            translation_key="missing_settings_permission",
+            translation_placeholders={
+                "box": self.config_entry.title,
+                "host": self.client.host,
+            },
+        )
 
     def _log_changes(
         self,

@@ -33,6 +33,56 @@ class IliadboxAuthError(IliadboxError):
     """The app token is invalid or was revoked."""
 
 
+class IliadboxPermissionError(IliadboxError):
+    """The app lacks a permission on the box (e.g. 'settings')."""
+
+    def __init__(self, permission: str, host: str) -> None:
+        self.permission = permission
+        label = PERMISSION_LABELS.get(permission, permission)
+        super().__init__(
+            f"The box did not allow this action: the \"Home Assistant\" app lacks the "
+            f"\"{label}\" permission. To fix it, open http://{host} in a browser, go to "
+            f"Access management → Applications → Home Assistant, enable \"{label}\" and "
+            f"save, then retry (no restart needed)."
+        )
+
+
+# Labels shown by the box web interface for the API permission names
+PERMISSION_LABELS = {
+    "settings": "Modify settings",
+    "explorer": "Access to files",
+    "calls": "Access to calls",
+    "contacts": "Access to contacts",
+    "downloader": "Access to downloads",
+    "parental": "Parental control",
+    "pvr": "Recordings",
+    "tv": "TV",
+    "camera": "Cameras",
+    "home": "Home automation",
+    "player": "Player control",
+    "vm": "Virtual machines",
+}
+
+# English text for the box error codes. The box also sends a "msg", but it is
+# localized in the box language (e.g. Italian): it is only logged.
+ERROR_MESSAGES = {
+    "auth_required": "the session expired",
+    "invalid_token": "the authorization of Home Assistant was revoked on the box",
+    "pending_token": "the authorization request was not confirmed on the box yet",
+    "denied_from_external_ip": "the box refuses requests from outside its local network",
+    "new_apps_denied": "the box does not accept new applications (check Access management)",
+    "apps_denied": "the box has API access disabled for applications",
+    "ratelimited": "too many requests, retry in a few seconds",
+    "invalid_request": "the box rejected the request as invalid",
+    "inval": "the box rejected the values sent",
+    "internal_error": "internal error on the box",
+    "busy": "the box is busy, retry in a few seconds",
+    "noent": "the requested item does not exist on the box",
+    "exists": "the item already exists on the box",
+    "nodev": "the box does not have this feature",
+}
+
+
 class IliadboxClient:
     """Talks to the Iliadbox (Freebox OS API)."""
 
@@ -47,7 +97,10 @@ class IliadboxClient:
     ) -> None:
         self._session = session
         scheme = "https" if use_ssl else "http"
+        self.host = host
         self._root = f"{scheme}://{host}:{port}"
+        # Permissions granted to the app, read when the session opens
+        self.permissions: set[str] = set()
         # False skips certificate checks (self-signed or name not matching the IP)
         self._ssl: bool = use_ssl and verify_ssl
         self._app_token = app_token
@@ -134,11 +187,16 @@ class IliadboxClient:
         except IliadboxError as err:
             raise IliadboxAuthError(str(err)) from err
         self._session_token = result["session_token"]
-        granted = [k for k, v in (result.get("permissions") or {}).items() if v]
-        _LOGGER.info("Session opened, permissions: %s", ", ".join(sorted(granted)) or "none")
-        if "settings" not in granted:
-            _LOGGER.info(
-                "The app lacks the 'settings' permission: Wi-Fi switch and reboot will fail"
+        self.permissions = {k for k, v in (result.get("permissions") or {}).items() if v}
+        _LOGGER.info(
+            "Session opened, permissions: %s", ", ".join(sorted(self.permissions)) or "none"
+        )
+        if "settings" not in self.permissions:
+            _LOGGER.warning(
+                "The app lacks the \"Modify settings\" permission: Wi-Fi switch, reboot and "
+                "guest Wi-Fi will fail. Enable it on http://%s → Access management → "
+                "Applications → Home Assistant",
+                self.host,
             )
 
     async def _request(
@@ -184,9 +242,18 @@ class IliadboxClient:
             _LOGGER.info("Session expired, logging in again")
             self._session_token = None
             return await self._request(method, path, json, auth, retry=False)
+        if code == "insufficient_rights":
+            # Permissions are fixed when a session opens: if the user granted the
+            # permission meanwhile, a new session picks it up
+            if auth and retry:
+                _LOGGER.debug("Missing permission on %s, retrying with a new session", path)
+                self._session_token = None
+                return await self._request(method, path, json, auth, retry=False)
+            raise IliadboxPermissionError(data.get("missing_right") or "settings", self.host)
+        reason = ERROR_MESSAGES.get(code, f"box error \"{code or 'unknown'}\"")
         if code in ("invalid_token", "pending_token", "denied_from_external_ip"):
-            raise IliadboxAuthError(data.get("msg", code))
-        raise IliadboxError(f"{path}: {data.get('msg', code)} ({code})")
+            raise IliadboxAuthError(reason[0].upper() + reason[1:])
+        raise IliadboxError(f"The box refused {method} {path}: {reason}")
 
     async def get_connection(self) -> dict[str, Any]:
         return await self._request("GET", "connection/")

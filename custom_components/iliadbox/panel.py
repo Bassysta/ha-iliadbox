@@ -119,6 +119,7 @@ def ws_get_data(
                 "loaded": True,
                 "model": coordinator.client.info.get("box_model_name"),
                 "api_version": coordinator.client.info.get("api_version"),
+                "can_modify": "settings" in coordinator.client.permissions,
                 "available": coordinator.last_update_success,
                 "connection": data.get("connection", {}),
                 "system": data.get("system", {}),

@@ -86,6 +86,12 @@
       "wrong_box": "This address belongs to a different box than the configured one."
     }
   },
+  "issues": {
+    "missing_settings_permission": {
+      "title": "{box}: \"Modify settings\" permission missing",
+      "description": "The box does not give Home Assistant the **Modify settings** permission, so turning Wi-Fi on or off, rebooting and creating or revoking guest Wi-Fi accesses fail. Reading values keeps working.\n\nTo fix it:\n1. Open http://{host} in a browser and log in to the box.\n2. Go to **Access management → Applications**.\n3. Open **Home Assistant**, enable **Modify settings** and save.\n\nNo restart is needed: this notice disappears at the next poll."
+    }
+  },
   "selector": {
     "log_level": {
       "options": {

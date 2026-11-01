@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.10.2
+
+- Box errors are now shown in English with a clear reason; the box own message (in the box language, e.g. Italian) is only logged.
+- Missing permission: the error explains how to grant **Modify settings** on the box. Once granted it works at the next attempt, without restarting.
+- While the permission is missing, a notice appears in **Settings → Repairs**, on the box page of the panel and in the guest Wi-Fi card.
+
 ## 0.10.1
 
 - New original integration icon (router with Wi-Fi on a red-orange tile). The previous icon was a third-party app logo and has been removed.

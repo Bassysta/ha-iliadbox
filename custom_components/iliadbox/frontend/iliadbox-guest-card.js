@@ -65,6 +65,9 @@ const STYLE = `
   .access .btns { grid-row: 1 / span 2; grid-column: 2; align-self: center; display: flex; gap: 6px; }
   .access button { padding: 4px 10px; }
   .error { color: var(--error-color, #db4437); font-size: 13px; }
+  .warn { padding: 10px 12px; margin-bottom: 12px; border-radius: 8px; font-size: 13px; line-height: 1.5;
+    border: 1px solid var(--warning-color, #ffa600); background: rgba(255, 166, 0, 0.12); }
+  .warn a { color: var(--primary-color); }
 `;
 
 class IliadboxGuestCard extends HTMLElement {
@@ -119,6 +122,7 @@ class IliadboxGuestCard extends HTMLElement {
       <style>${STYLE}</style>
       <ha-card>
         <div class="head"><span class="title"></span><span class="muted mono" id="ssid"></span></div>
+        <div id="perm"></div>
         <form novalidate ${this._isAdmin ? "" : "hidden"}>
           <label class="wide">Description
             <input name="description" maxlength="64" placeholder="e.g. Weekend guests" required>
@@ -289,6 +293,13 @@ class IliadboxGuestCard extends HTMLElement {
   _render() {
     const box = this._box();
     this.shadowRoot.getElementById("ssid").textContent = box?.guest?.ssid || "";
+    this.shadowRoot.getElementById("perm").innerHTML =
+      box && box.can_modify === false && this._isAdmin
+        ? `<div class="warn">The box does not give Home Assistant the <b>Modify settings</b> permission:
+            guest accesses cannot be created or revoked. Open
+            <a href="http://${esc(box.host)}" target="_blank" rel="noopener">http://${esc(box.host)}</a> →
+            <b>Access management → Applications → Home Assistant</b>, enable <b>Modify settings</b> and save.</div>`
+        : "";
     const keys = box?.guest?.keys || [];
     this.shadowRoot.getElementById("list").innerHTML = keys.length
       ? keys

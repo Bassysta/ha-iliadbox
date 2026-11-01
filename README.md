@@ -294,7 +294,7 @@ The level applies immediately, without restarting. Logs are under **Settings →
 | *The box certificate could not be verified* | Expected when connecting by IP: turn off *Verify the certificate*. |
 | *Request not confirmed on the box yet* | Accept the request on the box display first, then press Submit. |
 | *Request timed out* | Press Submit to send a new request and accept it within a couple of minutes. |
-| Wi-Fi switch, reboot or guest Wi-Fi fail | Grant the **Modify settings** permission to "Home Assistant" in Access management → Applications. |
+| Wi-Fi switch, reboot or guest Wi-Fi fail with *lacks the "Modify settings" permission* | Open `http://<box-ip>` → **Access management → Applications → Home Assistant**, enable **Modify settings** and save. No restart needed: the integration picks it up within one poll. While the permission is missing, a notice is shown in **Settings → Repairs** and on the box page of the panel. |
 | A LAN device is missing | Devices appear when the box lists them; new ones are added at the next poll (60 seconds by default). |
 | Too many old devices | Lower *Hide devices not seen for* in **Configure**: older devices are removed automatically. |
 | A device is named like `Espressif 7C:29` | The box has no name for it: the vendor and the end of the MAC are used. Rename it in Home Assistant if you like. |
