@@ -15,8 +15,6 @@ jobs:
       - uses: hacs/action@main
         with:
           category: integration
-          # Brand icons live in home-assistant/brands, not in this repository
-          ignore: brands
 
   hassfest:
     name: Hassfest

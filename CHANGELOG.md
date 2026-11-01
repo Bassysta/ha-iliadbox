@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.10.1
+
+- New original integration icon (router with Wi-Fi on a red-orange tile). The previous icon was a third-party app logo and has been removed.
+
 ## 0.10.0
 
 - **Guest Wi-Fi QR code**: scan it with the phone camera to join the guest network.
