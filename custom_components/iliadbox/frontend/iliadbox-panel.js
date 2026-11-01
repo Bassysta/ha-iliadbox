@@ -51,6 +51,10 @@ const sensorName = (id) =>
   : /^fan(\d+)/.test(id) ? `Fan ${Number(id.match(/^fan(\d+)/)[1]) + 1}`
   : id;
 
+// The SVG comes from Home Assistant (segno), not from user input
+const qrBlock = (svg) =>
+  svg ? `<div><div class="qr">${svg}</div><div class="qr-hint">Scan with the phone camera<br>to join the network</div></div>` : "";
+
 const ipv4 = (host) =>
   (host.l3connectivities || []).find((l) => l.af === "ipv4" && l.active)?.addr ||
   (host.l3connectivities || []).find((l) => l.af === "ipv4")?.addr ||
@@ -119,6 +123,11 @@ const STYLE = `
   .inline input { flex: 1; }
   .form-foot { grid-column: 1 / -1; display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }
   .created { border: 2px solid var(--success-color, #43a047); border-radius: 10px; padding: 12px 16px; margin-bottom: 16px; }
+  .created { display: flex; gap: 16px; flex-wrap: wrap; align-items: flex-start; }
+  .created .info { flex: 1; min-width: 220px; }
+  .qr { background: #fff; border-radius: 10px; padding: 6px; line-height: 0; }
+  .qr svg { width: 170px; height: 170px; }
+  .qr-hint { font-size: 12px; color: var(--secondary-text-color); text-align: center; margin-top: 4px; line-height: 1.3; }
   .mono { font-family: ui-monospace, Consolas, monospace; }
   .big-pw { font-size: 22px; font-weight: 600; letter-spacing: 1px; }
   @media (max-width: 700px) { .hide-narrow { display: none; } }
@@ -287,8 +296,10 @@ class IliadboxPanel extends HTMLElement {
       this._createGuest();
     });
     this.shadowRoot.getElementById("guest-list").addEventListener("click", (e) => {
-      const btn = e.target.closest("button[data-delete]");
-      if (btn) this._deleteGuest(btn.dataset.entry, Number(btn.dataset.delete), btn.dataset.name);
+      const del = e.target.closest("button[data-delete]");
+      if (del) this._deleteGuest(del.dataset.entry, Number(del.dataset.delete), del.dataset.name);
+      const qr = e.target.closest("button[data-qr]");
+      if (qr) this._showQr(qr.dataset.entry, Number(qr.dataset.qr), qr.dataset.name);
     });
     this._built = true;
     this._validateGuest();
@@ -336,6 +347,7 @@ class IliadboxPanel extends HTMLElement {
       });
       this.shadowRoot.getElementById("guest-result").innerHTML = `
         <div class="created">
+          <div class="info">
           <div class="muted">Guest Wi-Fi "${esc(res.description)}" created</div>
           <div class="row"><span>Network</span><span class="mono">${esc(res.ssid || "—")}</span></div>
           <div class="row"><span>Password</span><span class="mono big-pw">${esc(res.password)}</span></div>
@@ -345,6 +357,8 @@ class IliadboxPanel extends HTMLElement {
           <div class="row"><span>Expires</span><span>${esc(new Date(res.expires).toLocaleString())}</span></div>
           <div class="actions"><button type="button" id="copy">Copy password</button>
             <button type="button" id="dismiss">Close</button></div>
+          </div>
+          ${qrBlock(res.qr_svg)}
         </div>`;
       this.shadowRoot.getElementById("copy").onclick = () => navigator.clipboard?.writeText(res.password);
       this.shadowRoot.getElementById("dismiss").onclick = () =>
@@ -358,6 +372,18 @@ class IliadboxPanel extends HTMLElement {
     this._busy = false;
     this._validateGuest();
     this._refresh();
+  }
+
+  async _showQr(entryId, accessId, name) {
+    const el = this.shadowRoot.getElementById("guest-result");
+    try {
+      const res = await this._hass.callWS({ type: "iliadbox/guest_qr", entry_id: entryId, access_id: accessId });
+      el.innerHTML = `<div class="created"><div class="info"><div class="muted">QR code of "${esc(name)}"</div>
+        <div class="actions"><button type="button" id="dismiss">Close</button></div></div>${qrBlock(res.qr_svg)}</div>`;
+      this.shadowRoot.getElementById("dismiss").onclick = () => (el.innerHTML = "");
+    } catch (err) {
+      alert(`Cannot show the QR code: ${err.message || err}`);
+    }
   }
 
   async _deleteGuest(entryId, accessId, name) {
@@ -392,7 +418,8 @@ class IliadboxPanel extends HTMLElement {
                 <td>${fmtUptime(k.remaining)}</td>
                 <td>${
                   isAdmin
-                    ? `<button class="danger" data-delete="${esc(k.id)}" data-entry="${esc(k.entry)}" data-name="${esc(p.description)}">Revoke</button>`
+                    ? `<button data-qr="${esc(k.id)}" data-entry="${esc(k.entry)}" data-name="${esc(p.description)}">QR</button>
+                       <button class="danger" data-delete="${esc(k.id)}" data-entry="${esc(k.entry)}" data-name="${esc(p.description)}">Revoke</button>`
                     : ""
                 }</td>
               </tr>`;

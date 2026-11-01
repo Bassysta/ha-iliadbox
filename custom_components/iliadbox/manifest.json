@@ -3,11 +3,11 @@
   "name": "Iliadbox",
   "codeowners": ["@Bassysta"],
   "config_flow": true,
-  "dependencies": ["frontend", "http", "panel_custom", "websocket_api"],
+  "dependencies": ["frontend", "http", "image", "panel_custom", "websocket_api"],
   "documentation": "https://github.com/Bassysta/ha-iliadbox",
   "integration_type": "device",
   "iot_class": "local_polling",
   "issue_tracker": "https://github.com/Bassysta/ha-iliadbox/issues",
-  "requirements": [],
-  "version": "0.9.0"
+  "requirements": ["segno==1.6.6"],
+  "version": "0.10.0"
 }

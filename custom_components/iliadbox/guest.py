@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+import io
 import logging
 import secrets
 import string
 from datetime import timedelta
 from typing import Any
+
+from segno import helpers as segno_helpers
 
 from homeassistant.components import persistent_notification
 from homeassistant.core import HomeAssistant
@@ -28,6 +31,29 @@ _ALPHABET = "".join(c for c in string.ascii_letters + string.digits if c not in 
 
 def generate_password(length: int = 12) -> str:
     return "".join(secrets.choice(_ALPHABET) for _ in range(length))
+
+
+def wifi_qr(ssid: str, password: str, kind: str = "svg") -> bytes:
+    """Standard Wi-Fi QR code (WIFI:T:WPA;S:...;P:...;;), as SVG or PNG.
+
+    Phone cameras read it and offer to join the network.
+    """
+    qr = segno_helpers.make_wifi(ssid=ssid, password=password, security="WPA")
+    buf = io.BytesIO()
+    if kind == "png":
+        qr.save(buf, kind="png", scale=10, border=2)
+    else:
+        qr.save(buf, kind="svg", scale=5, border=2, xmldecl=False, svgns=True, light="#fff")
+    return buf.getvalue()
+
+
+def access_qr_svg(coordinator: IliadboxCoordinator, access: dict[str, Any]) -> str | None:
+    """QR of an access as inline SVG, or None if the box gave no network name."""
+    ssid = coordinator.data["guest"]["ssid"]
+    password = access.get("params", {}).get("key")
+    if not ssid or not password:
+        return None
+    return wifi_qr(ssid, password).decode()
 
 
 def validate(

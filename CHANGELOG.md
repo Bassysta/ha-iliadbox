@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.10.0
+
+- **Guest Wi-Fi QR code**: scan it with the phone camera to join the guest network.
+  - Shown in the panel and in the dashboard card right after creation, and with the new **QR** button on each active access (admins only).
+  - New entity *Guest Wi-Fi QR code* (`image`): QR of the most recent access, for dashboards.
+- New requirement `segno` (installed automatically) to generate the QR codes locally.
+
 ## 0.9.0
 
 - New setting **Hide devices not seen for** (default 30 days, 0 = all): devices whose last activity is older are removed from Home Assistant and from the panel, and come back automatically if they reconnect.

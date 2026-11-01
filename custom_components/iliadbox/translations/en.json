@@ -151,6 +151,9 @@
     "button": {
       "create_guest_wifi": { "name": "Create guest Wi-Fi" }
     },
+    "image": {
+      "guest_qr": { "name": "Guest Wi-Fi QR code" }
+    },
     "binary_sensor": {
       "wan_connected": { "name": "Internet connection" },
       "wifi_power_saving": { "name": "Wi-Fi power saving" },

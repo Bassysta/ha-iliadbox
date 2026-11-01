@@ -17,7 +17,7 @@ from homeassistant.core import HomeAssistant, callback
 from .api import IliadboxError
 from .const import APP_VERSION, DOMAIN
 from .coordinator import IliadboxCoordinator
-from .guest import async_create_guest, async_delete_guest
+from .guest import access_qr_svg, async_create_guest, async_delete_guest, wifi_qr
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -52,6 +52,7 @@ async def async_register_panel(hass: HomeAssistant) -> None:
         websocket_api.async_register_command(hass, ws_reboot)
         websocket_api.async_register_command(hass, ws_create_guest)
         websocket_api.async_register_command(hass, ws_delete_guest)
+        websocket_api.async_register_command(hass, ws_guest_qr)
         # Dashboard card, loaded on every dashboard
         frontend.add_extra_js_url(hass, f"{STATIC_URL}/iliadbox-guest-card.js?v={APP_VERSION}")
         hass.data[DATA_STATIC] = True
@@ -221,7 +222,33 @@ async def ws_create_guest(
         _LOGGER.error("Guest Wi-Fi creation from panel failed: %s", err)
         connection.send_error(msg["id"], "box_error", str(err))
         return
+    if details["ssid"]:
+        details["qr_svg"] = wifi_qr(details["ssid"], details["password"]).decode()
     connection.send_result(msg["id"], details)
+
+
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): "iliadbox/guest_qr",
+        vol.Required("entry_id"): str,
+        vol.Required("access_id"): int,
+    }
+)
+@websocket_api.require_admin
+@callback
+def ws_guest_qr(
+    hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
+) -> None:
+    """QR code (SVG) of an existing guest access. Admins only: it holds the password."""
+    coordinator = _coordinators(hass).get(msg["entry_id"])
+    access = coordinator and next(
+        (k for k in coordinator.data["guest"]["keys"] if k["id"] == msg["access_id"]), None
+    )
+    svg = access and access_qr_svg(coordinator, access)
+    if not svg:
+        connection.send_error(msg["id"], "not_found", "Guest access not found")
+        return
+    connection.send_result(msg["id"], {"qr_svg": svg})
 
 
 @websocket_api.websocket_command(

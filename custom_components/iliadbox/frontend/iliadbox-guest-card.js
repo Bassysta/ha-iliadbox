@@ -24,6 +24,10 @@ const fmtRemaining = (s) => {
   return d ? `${d}d ${h}h` : `${h}h ${m}m`;
 };
 
+// The SVG comes from Home Assistant (segno), not from user input
+const qrBlock = (svg) =>
+  svg ? `<div><div class="qr">${svg}</div><div class="qr-hint">Scan with the phone camera<br>to join the network</div></div>` : "";
+
 const accessLabel = (t) => (t === "full" ? "Full network" : "Internet only");
 
 const STYLE = `
@@ -47,13 +51,19 @@ const STYLE = `
   button.danger { color: var(--error-color, #db4437); border-color: var(--error-color, #db4437); padding: 4px 10px; }
   button:disabled { opacity: 0.45; cursor: default; }
   .created { border: 2px solid var(--success-color, #43a047); border-radius: 12px; padding: 12px; margin-bottom: 12px; }
+  .created { display: flex; gap: 16px; flex-wrap: wrap; align-items: flex-start; }
+  .created .info { flex: 1; min-width: 220px; }
+  .qr { background: #fff; border-radius: 10px; padding: 6px; line-height: 0; }
+  .qr svg { width: 170px; height: 170px; }
+  .qr-hint { font-size: 12px; color: var(--secondary-text-color); text-align: center; margin-top: 4px; line-height: 1.3; }
   .row { display: flex; justify-content: space-between; gap: 12px; padding: 3px 0; }
   .row span:first-child { color: var(--secondary-text-color); }
   .pw { font-size: 22px; font-weight: 700; letter-spacing: 1px; }
   .actions { display: flex; gap: 8px; margin-top: 8px; }
   .access { display: grid; grid-template-columns: 1fr auto; gap: 2px 8px; padding: 8px 0; border-top: 1px solid var(--divider-color); }
   .access .name { font-weight: 600; }
-  .access button { grid-row: 1 / span 2; grid-column: 2; align-self: center; }
+  .access .btns { grid-row: 1 / span 2; grid-column: 2; align-self: center; display: flex; gap: 6px; }
+  .access button { padding: 4px 10px; }
   .error { color: var(--error-color, #db4437); font-size: 13px; }
 `;
 
@@ -154,8 +164,10 @@ class IliadboxGuestCard extends HTMLElement {
       this._create();
     });
     this.shadowRoot.getElementById("list").addEventListener("click", (e) => {
-      const btn = e.target.closest("button[data-id]");
-      if (btn) this._revoke(Number(btn.dataset.id), btn.dataset.name);
+      const del = e.target.closest("button[data-id]");
+      if (del) this._revoke(Number(del.dataset.id), del.dataset.name);
+      const qr = e.target.closest("button[data-qr]");
+      if (qr) this._showQr(Number(qr.dataset.qr), qr.dataset.name);
     });
     this._built = true;
     this._validate();
@@ -235,6 +247,7 @@ class IliadboxGuestCard extends HTMLElement {
     const el = this.shadowRoot.getElementById("result");
     el.innerHTML = `
       <div class="created">
+        <div class="info">
         <div class="muted">"${esc(res.description)}" created</div>
         <div class="row"><span>Network</span><span class="mono">${esc(res.ssid || "—")}</span></div>
         <div class="row"><span>Password</span><span class="mono pw">${esc(res.password)}</span></div>
@@ -244,9 +257,23 @@ class IliadboxGuestCard extends HTMLElement {
         <div class="row"><span>Expires</span><span>${esc(new Date(res.expires).toLocaleString())}</span></div>
         <div class="actions"><button type="button" id="copy">Copy password</button>
           <button type="button" id="close">Close</button></div>
+        </div>
+        ${qrBlock(res.qr_svg)}
       </div>`;
     el.querySelector("#copy").onclick = () => navigator.clipboard?.writeText(res.password);
     el.querySelector("#close").onclick = () => (el.innerHTML = "");
+  }
+
+  async _showQr(id, name) {
+    const el = this.shadowRoot.getElementById("result");
+    try {
+      const res = await this._hass.callWS({ type: "iliadbox/guest_qr", entry_id: this._box().entry_id, access_id: id });
+      el.innerHTML = `<div class="created"><div class="info"><div class="muted">QR code of "${esc(name)}"</div>
+        <div class="actions"><button type="button" id="close">Close</button></div></div>${qrBlock(res.qr_svg)}</div>`;
+      el.querySelector("#close").onclick = () => (el.innerHTML = "");
+    } catch (err) {
+      this._setError(`Cannot show the QR code: ${err.message || err}`);
+    }
   }
 
   async _revoke(id, name) {
@@ -271,7 +298,8 @@ class IliadboxGuestCard extends HTMLElement {
               <span class="name">${esc(p.description)}${p.key ? ` · <span class="mono">${esc(p.key)}</span>` : ""}</span>
               ${
                 this._isAdmin
-                  ? `<button class="danger" data-id="${esc(k.id)}" data-name="${esc(p.description)}">Revoke</button>`
+                  ? `<span class="btns"><button data-qr="${esc(k.id)}" data-name="${esc(p.description)}">QR</button>
+                     <button class="danger" data-id="${esc(k.id)}" data-name="${esc(p.description)}">Revoke</button></span>`
                   : ""
               }
               <span class="muted">${accessLabel(p.access_type)} · ${
