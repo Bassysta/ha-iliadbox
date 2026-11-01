@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.8.0
+
+- Sidebar panel supports **several Iliadbox**: the home shows one card per box (icon, name, model, address, status and main values); click a card to manage that box. Boxes configured but not running are shown greyed out.
+- Box pages have their own address (`/iliadbox/<entry id>`), so they can be bookmarked or linked from a dashboard.
+- The panel guest Wi-Fi form and device list work on the selected box.
+
 ## 0.7.0
 
 - **Every value is an entity.** New box entities: connection state and type, IPv4 port range, firmware, serial, MAC, board, disk status, Wi-Fi power saving, MAC filter, guest network, connected/known devices, total Wi-Fi clients.

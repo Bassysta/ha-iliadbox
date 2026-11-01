@@ -11,6 +11,7 @@ import voluptuous as vol
 from homeassistant.components import frontend, panel_custom, websocket_api
 from homeassistant.components.http import StaticPathConfig
 from homeassistant.config_entries import ConfigEntryState
+from homeassistant.const import CONF_HOST
 from homeassistant.core import HomeAssistant, callback
 
 from .api import IliadboxError
@@ -38,11 +39,12 @@ async def async_register_panel(hass: HomeAssistant) -> None:
     """Register static files, websocket commands and the sidebar panel once."""
     if not hass.data.get(DATA_STATIC):
         # Static paths cannot be unregistered: keep them for the whole HA run
+        root = Path(__file__).parent
         await hass.http.async_register_static_paths(
             [
-                StaticPathConfig(
-                    STATIC_URL, str(Path(__file__).parent / "frontend"), False
-                )
+                StaticPathConfig(STATIC_URL, str(root / "frontend"), False),
+                # The integration icon, shown on the panel box cards
+                StaticPathConfig(f"{STATIC_URL}/brand", str(root / "brand"), True),
             ]
         )
         websocket_api.async_register_command(hass, ws_get_data)
@@ -84,7 +86,21 @@ def ws_get_data(
 ) -> None:
     boxes = []
     is_admin = connection.user.is_admin
-    for entry_id, coordinator in _coordinators(hass).items():
+    coordinators = _coordinators(hass)
+    for entry in hass.config_entries.async_entries(DOMAIN):
+        if entry.entry_id not in coordinators:
+            # Configured but not running (box unreachable, authorization lost...)
+            boxes.append(
+                {
+                    "entry_id": entry.entry_id,
+                    "title": entry.title,
+                    "host": entry.data.get(CONF_HOST),
+                    "loaded": False,
+                    "state": entry.state.value,
+                    "reason": entry.reason,
+                }
+            )
+    for entry_id, coordinator in coordinators.items():
         data = coordinator.data or {}
         guest = data.get("guest", {"ssid": None, "keys": []})
         keys = guest["keys"]
@@ -98,15 +114,20 @@ def ws_get_data(
             {
                 "entry_id": entry_id,
                 "title": coordinator.config_entry.title,
+                "host": coordinator.config_entry.data.get(CONF_HOST),
+                "loaded": True,
                 "model": coordinator.client.info.get("box_model_name"),
+                "api_version": coordinator.client.info.get("api_version"),
                 "available": coordinator.last_update_success,
                 "connection": data.get("connection", {}),
                 "system": data.get("system", {}),
                 "wifi": data.get("wifi", {}),
+                "radios": list(data.get("radios", {}).values()),
                 "hosts": list(data.get("hosts", {}).values()),
                 "guest": {"ssid": guest["ssid"], "keys": keys},
             }
         )
+    boxes.sort(key=lambda b: (b["title"] or "").lower())
     connection.send_result(msg["id"], boxes)
 
 

@@ -1,6 +1,9 @@
 // Sidebar panel for the Iliadbox integration. Plain web component, no build step.
+// Home: one card per configured box. /iliadbox/<entry_id>: management of that box.
 
 const REFRESH_MS = 10000;
+const PANEL_URL = "/iliadbox";
+const ICON_URL = "/iliadbox_static/brand/icon.png";
 const MAX_HOURS = 8760;
 
 // Same alphabet as guest.generate_password(): no look-alike characters
@@ -58,7 +61,25 @@ const STYLE = `
   .toolbar { display: flex; align-items: center; height: 56px; padding: 0 12px; gap: 8px;
     background: var(--app-header-background-color, var(--primary-color));
     color: var(--app-header-text-color, var(--text-primary-color, #fff)); font-size: 20px; }
+  .toolbar .back { display: none; border: none; background: transparent; color: inherit; padding: 8px; font-size: 22px; line-height: 1; cursor: pointer; }
+  .toolbar.detail .back { display: inline-flex; }
+  .toolbar.detail ha-menu-button { display: none; }
   .wrap { max-width: 1200px; margin: 0 auto; padding: 16px; }
+  [hidden] { display: none !important; }
+  .home { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 16px; }
+  .boxcard { cursor: pointer; display: flex; flex-direction: column; gap: 10px; transition: box-shadow 0.2s, transform 0.1s; }
+  .boxcard:hover { box-shadow: 0 4px 14px rgba(0, 0, 0, 0.25); }
+  .boxcard:active { transform: scale(0.99); }
+  .boxcard:focus-visible { outline: 2px solid var(--primary-color); }
+  .boxhead { display: flex; gap: 14px; align-items: center; }
+  .boxhead img { width: 56px; height: 56px; border-radius: 12px; flex: none; }
+  .boxhead .t { font-size: 18px; font-weight: 600; }
+  .boxhead .s { font-size: 13px; color: var(--secondary-text-color); margin-bottom: 4px; }
+  .stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+  .stat { background: var(--secondary-background-color, rgba(127, 127, 127, 0.08)); border-radius: 10px; padding: 8px; text-align: center; }
+  .stat b { display: block; font-size: 16px; }
+  .stat span { font-size: 11px; color: var(--secondary-text-color); }
+  .boxcard.off { opacity: 0.75; cursor: default; }
   .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 16px; margin-bottom: 16px; }
   .card { background: var(--ha-card-background, var(--card-background-color, #fff));
     border-radius: var(--ha-card-border-radius, 12px); box-shadow: var(--ha-card-box-shadow, none);
@@ -108,6 +129,7 @@ class IliadboxPanel extends HTMLElement {
     super();
     this.attachShadow({ mode: "open" });
     this._boxes = [];
+    this._selected = null; // entry_id of the box being managed, null on the home
     this._filter = "";
     this._onlyActive = true;
     this._error = null;
@@ -131,6 +153,32 @@ class IliadboxPanel extends HTMLElement {
 
   set panel(_panel) {}
 
+  // HA passes the part of the URL after /iliadbox: "" or "/<entry_id>"
+  set route(route) {
+    const id = (route?.path || "").replace(/^\//, "").split("/")[0] || null;
+    if (id !== this._selected) this._select(id);
+  }
+
+  _navigate(id) {
+    history.pushState(null, "", id ? `${PANEL_URL}/${id}` : PANEL_URL);
+    window.dispatchEvent(new CustomEvent("location-changed", { detail: { replace: false } }));
+    this._select(id);
+  }
+
+  _select(id) {
+    this._selected = id;
+    if (!this._built) return;
+    // Each box starts with no leftover guest result
+    this.shadowRoot.getElementById("guest-result").innerHTML = "";
+    this._render();
+    window.scrollTo(0, 0);
+  }
+
+  // The box shown on the detail page (only loaded boxes can be managed)
+  _box() {
+    return this._boxes.find((b) => b.entry_id === this._selected && b.loaded) || null;
+  }
+
   connectedCallback() {
     if (this._hass) this._start();
   }
@@ -149,8 +197,13 @@ class IliadboxPanel extends HTMLElement {
   _build() {
     this.shadowRoot.innerHTML = `
       <style>${STYLE}</style>
-      <div class="toolbar"><ha-menu-button></ha-menu-button><span>Iliadbox</span></div>
+      <div class="toolbar"><ha-menu-button></ha-menu-button>
+        <button class="back" id="back" title="All boxes" aria-label="All boxes">&larr;</button>
+        <span id="title">Iliadbox</span></div>
       <div class="wrap">
+        <div id="error"></div>
+        <div id="home" class="home"></div>
+        <div id="detail" hidden>
         <div id="boxes"></div>
         <div class="card guest">
           <h2 id="guest-title">Guest Wi-Fi</h2>
@@ -192,9 +245,23 @@ class IliadboxPanel extends HTMLElement {
           </div>
           <div id="devices"></div>
         </div>
+        </div>
       </div>`;
     this._menu = this.shadowRoot.querySelector("ha-menu-button");
     this._menu.narrow = this._narrow;
+    this.shadowRoot.getElementById("back").addEventListener("click", () => this._navigate(null));
+    const home = this.shadowRoot.getElementById("home");
+    home.addEventListener("click", (e) => {
+      const card = e.target.closest("[data-open]");
+      if (card) this._navigate(card.dataset.open);
+    });
+    home.addEventListener("keydown", (e) => {
+      const card = e.target.closest("[data-open]");
+      if (card && (e.key === "Enter" || e.key === " ")) {
+        e.preventDefault();
+        this._navigate(card.dataset.open);
+      }
+    });
     this.shadowRoot.getElementById("search").addEventListener("input", (e) => {
       this._filter = e.target.value.toLowerCase();
       this._renderDevices();
@@ -223,6 +290,7 @@ class IliadboxPanel extends HTMLElement {
       const btn = e.target.closest("button[data-delete]");
       if (btn) this._deleteGuest(btn.dataset.entry, Number(btn.dataset.delete), btn.dataset.name);
     });
+    this._built = true;
     this._validateGuest();
   }
 
@@ -249,7 +317,7 @@ class IliadboxPanel extends HTMLElement {
     else if (!Number.isInteger(v.max_devices) || v.max_devices < 0)
       problem = "Max devices must be 0 (unlimited) or a positive whole number.";
     else if (!["net_only", "full"].includes(v.access_type)) problem = "Choose an access type.";
-    else if (!this._boxes.length) problem = "No box available.";
+    else if (!this._box()) problem = "No box available.";
     this.shadowRoot.getElementById("guest-hint").textContent = problem;
     this.shadowRoot.getElementById("create").disabled = !!problem || this._busy;
     return !problem;
@@ -263,7 +331,7 @@ class IliadboxPanel extends HTMLElement {
     try {
       const res = await this._hass.callWS({
         type: "iliadbox/create_guest",
-        entry_id: this._boxes[0].entry_id,
+        entry_id: this._box().entry_id,
         ...values,
       });
       this.shadowRoot.getElementById("guest-result").innerHTML = `
@@ -304,10 +372,11 @@ class IliadboxPanel extends HTMLElement {
 
   _renderGuests() {
     const isAdmin = this._hass.user?.is_admin;
-    const ssid = this._boxes.find((b) => b.guest?.ssid)?.guest.ssid;
+    const box = this._box();
+    const ssid = box?.guest?.ssid;
     this.shadowRoot.getElementById("guest-title").textContent =
       ssid ? `Guest Wi-Fi · ${ssid}` : "Guest Wi-Fi";
-    const keys = this._boxes.flatMap((b) => (b.guest?.keys || []).map((k) => ({ ...k, entry: b.entry_id })));
+    const keys = (box?.guest?.keys || []).map((k) => ({ ...k, entry: box.entry_id }));
     this.shadowRoot.getElementById("guest-list").innerHTML = keys.length
       ? `<table>
           <thead><tr><th>Description</th><th>Password</th><th>Access</th>
@@ -340,10 +409,73 @@ class IliadboxPanel extends HTMLElement {
       this._error = err.message || String(err);
       console.warn("Iliadbox panel: refresh failed", err);
     }
+    this._render();
+  }
+
+  _render() {
+    const detail = this._selected !== null;
+    this.shadowRoot.querySelector(".toolbar").classList.toggle("detail", detail);
+    this.shadowRoot.getElementById("error").innerHTML = this._error
+      ? `<div class="error">${esc(this._error)}</div>`
+      : "";
+    this.shadowRoot.getElementById("home").hidden = detail;
+    this.shadowRoot.getElementById("detail").hidden = !detail;
+    if (!detail) {
+      this.shadowRoot.getElementById("title").textContent = "Iliadbox";
+      this._renderHome();
+      return;
+    }
+    const box = this._boxes.find((b) => b.entry_id === this._selected);
+    this.shadowRoot.getElementById("title").textContent = box ? box.title : "Iliadbox";
     this._renderBoxes();
     this._renderGuests();
     this._renderDevices();
     this._validateGuest();
+  }
+
+  _renderHome() {
+    const home = this.shadowRoot.getElementById("home");
+    if (!this._boxes.length) {
+      home.innerHTML = this._error
+        ? ""
+        : `<div class="card muted">No Iliadbox configured. Add one from Settings → Devices &amp; services.</div>`;
+      return;
+    }
+    home.innerHTML = this._boxes
+      .map((box) => {
+        const head = (status, cls) => `
+          <div class="boxhead">
+            <img src="${ICON_URL}" alt="">
+            <div>
+              <div class="t">${esc(box.title)}</div>
+              <div class="s">${esc(box.model || "Iliadbox")} · ${esc(box.host || "")}</div>
+              <span class="badge ${cls}">${status}</span>
+            </div>
+          </div>`;
+        if (!box.loaded) {
+          const why = ["setup_error", "setup_retry"].includes(box.state) ? "Not reachable" : esc(box.state);
+          return `<div class="card boxcard off" title="${esc(box.reason || "")}">${head(why, "ko")}
+            <div class="muted">Check this box in Settings → Devices &amp; services.</div></div>`;
+        }
+        const c = box.connection;
+        const s = box.system;
+        const up = c.state === "up";
+        const active = box.hosts.filter((h) => h.active).length;
+        const clients = (box.radios || []).reduce((n, r) => n + (r.clients || 0), 0);
+        const status = !box.available ? "Stale data" : up ? "Online" : esc(c.state || "Offline");
+        return `<div class="card boxcard" role="button" tabindex="0" data-open="${esc(box.entry_id)}">
+          ${head(status, up && box.available ? "ok" : "ko")}
+          <div class="row"><span>Public IP</span><span>${esc(c.ipv4 || "—")}</span></div>
+          <div class="row"><span>Firmware · uptime</span><span>${esc(s.firmware_version || "—")} · ${fmtUptime(s.uptime_val)}</span></div>
+          <div class="stats">
+            <div class="stat"><b>${fmtBytes(c.rate_down)}/s</b><span>↓ download</span></div>
+            <div class="stat"><b>${active}/${box.hosts.length}</b><span>devices online</span></div>
+            <div class="stat"><b>${box.wifi.enabled ? clients : "off"}</b><span>Wi-Fi clients</span></div>
+          </div>
+          <div class="row"><span>Guest accesses</span><span>${(box.guest?.keys || []).length}</span></div>
+        </div>`;
+      })
+      .join("");
   }
 
   async _action(action, entryId, enabled) {
@@ -356,7 +488,7 @@ class IliadboxPanel extends HTMLElement {
       msg = { type: "iliadbox/reboot", entry_id: entryId };
     }
     this._busy = true;
-    this._renderBoxes();
+    this._render();
     try {
       await this._hass.callWS(msg);
     } catch (err) {
@@ -368,17 +500,15 @@ class IliadboxPanel extends HTMLElement {
 
   _renderBoxes() {
     const isAdmin = this._hass.user?.is_admin;
-    const err = this._error ? `<div class="error">${esc(this._error)}</div>` : "";
-    const empty =
-      !this._error && !this._boxes.length
-        ? `<div class="card muted">No Iliadbox configured or loaded.</div>`
-        : "";
+    const selected = this._box();
+    const missing = selected
+      ? ""
+      : `<div class="card muted">This box is not available. Go back to the list of boxes.</div>`;
     const dis = this._busy ? "disabled" : "";
 
     this.shadowRoot.getElementById("boxes").innerHTML =
-      err +
-      empty +
-      this._boxes
+      missing +
+      (selected ? [selected] : [])
         .map((box) => {
           const c = box.connection;
           const s = box.system;
@@ -432,7 +562,7 @@ class IliadboxPanel extends HTMLElement {
   }
 
   _renderDevices() {
-    const hosts = this._boxes.flatMap((b) => b.hosts);
+    const hosts = this._box()?.hosts || [];
     const active = hosts.filter((h) => h.active).length;
     this.shadowRoot.getElementById("dev-title").textContent =
       `Devices · ${active} of ${hosts.length} connected`;

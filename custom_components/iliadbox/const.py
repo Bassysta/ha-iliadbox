@@ -15,7 +15,7 @@ DEFAULT_LOG_LEVEL = "info"
 
 APP_ID = "ha.iliadbox"
 APP_NAME = "Home Assistant"
-APP_VERSION = "0.7.0"
+APP_VERSION = "0.8.0"
 DEVICE_NAME = "Home Assistant"
 
 # Polling interval in seconds, set in the options

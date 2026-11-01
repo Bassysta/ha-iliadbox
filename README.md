@@ -7,7 +7,7 @@
 
 Custom integration for the **Iliadbox** (the Italian Iliad router, a rebranded Freebox). It talks to the box through the Freebox OS API **over the local network only**, with no cloud account and no external Python libraries.
 
-![Iliadbox panel](docs/images/overview.png)
+![Iliadbox panel: one card per box](docs/images/home.png)
 
 ## Features
 
@@ -183,13 +183,19 @@ The box marks a device as disconnected a few minutes after its last traffic, so 
 
 ## Sidebar panel
 
-The integration adds an **Iliadbox** entry to the sidebar. It refreshes every 10 seconds and follows the Home Assistant light/dark theme.
+The integration adds an **Iliadbox** entry to the sidebar. It refreshes every 10 seconds and follows the Home Assistant light/dark theme. It supports **several Iliadbox** at once: add each one with *Add integration → Iliadbox*.
+
+**Home**: one card per configured box, with the integration icon, name, model, local address, status (*Online*, *Stale data*, *Not reachable*), public IP, firmware and uptime, current download, devices online, Wi-Fi clients and guest accesses. Click a card to manage that box. Boxes that are configured but not running are shown greyed out.
+
+**Box page** (`/iliadbox/<entry id>`, the arrow goes back to the list):
 
 - **Connection**: state, current rates, bandwidth, public IPs, line type, total traffic.
 - **Box**: model, firmware, uptime, temperatures, fan, *Reboot*.
 - **Wi-Fi**: state, power saving, MAC filter, *Turn off / Turn on*.
-- **Guest Wi-Fi**: creation form and list of active accesses.
+- **Guest Wi-Fi**: creation form and list of active accesses of this box.
 - **Devices**: connected/total count, search by name, IP, MAC or vendor, *Connected only* filter.
+
+![Box page](docs/images/overview.png)
 
 Reboot, Wi-Fi and guest actions, and guest passwords, are available only to Home Assistant **admin** users.
 
