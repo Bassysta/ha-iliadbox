@@ -117,6 +117,7 @@ Every value read from the box is a separate entity, so dashboards and automation
 | sensor | Guest access *name* (expiry, one per access, added and removed automatically) | on |
 | switch | Wi-Fi | on, needs *Modify settings* |
 | button | Reboot, Create guest Wi-Fi | on, needs *Modify settings* |
+| image | Guest Wi-Fi QR code (latest access) | on |
 
 ### Wi-Fi radios (one set per band: 2.4 GHz, 5 GHz)
 
@@ -255,6 +256,23 @@ action: iliadbox.delete_guest_wifi
 data:
   access_id: 3
 ```
+
+### QR code
+
+A standard Wi-Fi QR code (`WIFI:T:WPA;S:<network>;P:<password>;;`) lets guests join by pointing the phone camera at it, without typing the password.
+
+- **Panel and dashboard card** (admins): shown next to the password right after creation, and with the **QR** button on every active access.
+- **Entity** `image.<box>_guest_wi_fi_qr_code`: QR of the most recently created access, refreshed when a new access is created. Show it in a dashboard with a *Picture entity* card:
+
+  ```yaml
+  type: picture-entity
+  entity: image.iliadbox_server_guest_wi_fi_qr_code
+  show_state: false
+  ```
+
+  The QR contains the guest password and, like any entity, is visible to every Home Assistant user who can see it. Disable the entity if that is not wanted. It is unavailable when there is no active access.
+
+QR codes are generated locally by Home Assistant with the [segno](https://pypi.org/project/segno/) library, installed automatically with the integration.
 
 ## Logging
 
