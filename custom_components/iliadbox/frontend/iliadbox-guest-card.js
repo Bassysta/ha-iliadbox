@@ -125,7 +125,7 @@ class IliadboxGuestCard extends HTMLElement {
         <div id="perm"></div>
         <form novalidate ${this._isAdmin ? "" : "hidden"}>
           <label class="wide">Description
-            <input name="description" maxlength="64" placeholder="e.g. Weekend guests" required>
+            <input name="description" maxlength="64" placeholder="e.g. Weekend guests" title="Default: box name + box id + guest" required>
           </label>
           <label class="wide">Password
             <span class="inline">
@@ -238,7 +238,7 @@ class IliadboxGuestCard extends HTMLElement {
       });
       this._showCreated(res);
       const f = this.shadowRoot.querySelector("form").elements;
-      f.description.value = "";
+      f.description.value = this._box()?.guest?.default_name || "";
       f.password.value = generatePassword();
     } catch (err) {
       this._setError(`Cannot create guest Wi-Fi: ${err.message || err}`);
@@ -293,6 +293,11 @@ class IliadboxGuestCard extends HTMLElement {
   _render() {
     const box = this._box();
     this.shadowRoot.getElementById("ssid").textContent = box?.guest?.ssid || "";
+    if (box && !this._nameSet) {
+      // Default access name (box name + box id + guest), editable
+      this.shadowRoot.querySelector("form").elements.description.value = box.guest?.default_name || "";
+      this._nameSet = true;
+    }
     this.shadowRoot.getElementById("perm").innerHTML =
       box && box.can_modify === false && this._isAdmin
         ? `<div class="warn">The box does not give Home Assistant the <b>Modify settings</b> permission:

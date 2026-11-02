@@ -18,6 +18,7 @@ from .guest import (
     DEFAULT_HOURS,
     DEFAULT_MAX_DEVICES,
     async_create_guest,
+    default_description,
     generate_password,
 )
 
@@ -63,7 +64,7 @@ class IliadboxGuestButton(IliadboxEntity, ButtonEntity):
             await async_create_guest(
                 self.hass,
                 self.coordinator,
-                "Guests",
+                default_description(self.coordinator),
                 generate_password(),
                 DEFAULT_HOURS,
                 DEFAULT_MAX_DEVICES,

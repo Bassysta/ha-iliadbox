@@ -29,6 +29,18 @@ MAX_HOURS = 8760
 _ALPHABET = "".join(c for c in string.ascii_letters + string.digits if c not in "0OoIl1")
 
 
+def default_description(coordinator: IliadboxCoordinator) -> str:
+    """Default access name: box name + box id + "guest", e.g. "iliadbox Modem 256B57 guest".
+
+    The box id is the end of the box MAC, the same code the box uses in its
+    Wi-Fi network names (iliadbox-256B57).
+    """
+    mac = (coordinator.data or {}).get("system", {}).get("mac") or ""
+    box_id = mac.replace(":", "").upper()[-6:]
+    parts = [coordinator.config_entry.title, box_id, "guest"]
+    return " ".join(p for p in parts if p)[:64]
+
+
 def generate_password(length: int = 12) -> str:
     return "".join(secrets.choice(_ALPHABET) for _ in range(length))
 

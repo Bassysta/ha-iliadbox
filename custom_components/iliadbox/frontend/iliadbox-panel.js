@@ -221,7 +221,7 @@ class IliadboxPanel extends HTMLElement {
           <h2 id="guest-title">Guest Wi-Fi</h2>
           <form id="guest-form" novalidate ${this._hass.user?.is_admin ? "" : "hidden"}>
             <label>Description
-              <input name="description" maxlength="64" placeholder="e.g. Weekend guests" required>
+              <input name="description" maxlength="64" placeholder="e.g. Weekend guests" title="Default: box name + box id + guest" required>
             </label>
             <label>Password
               <span class="inline">
@@ -367,7 +367,7 @@ class IliadboxPanel extends HTMLElement {
       this.shadowRoot.getElementById("dismiss").onclick = () =>
         (this.shadowRoot.getElementById("guest-result").innerHTML = "");
       const f = this.shadowRoot.getElementById("guest-form").elements;
-      f.description.value = "";
+      this._prefillGuestName(true);
       f.password.value = generatePassword();
     } catch (err) {
       alert(`Cannot create guest Wi-Fi: ${err.message || err}`);
@@ -457,10 +457,19 @@ class IliadboxPanel extends HTMLElement {
     }
     const box = this._boxes.find((b) => b.entry_id === this._selected);
     this.shadowRoot.getElementById("title").textContent = box ? box.title : "Iliadbox";
+    this._prefillGuestName();
     this._renderBoxes();
     this._renderGuests();
     this._renderDevices();
     this._validateGuest();
+  }
+
+  // Default access name (box name + box id + guest), set once per box page
+  _prefillGuestName(force = false) {
+    const box = this._box();
+    if (!box || (!force && this._nameFor === box.entry_id)) return;
+    this._nameFor = box.entry_id;
+    this.shadowRoot.getElementById("guest-form").elements.description.value = box.guest?.default_name || "";
   }
 
   _renderHome() {

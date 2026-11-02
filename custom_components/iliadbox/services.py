@@ -22,6 +22,7 @@ from .guest import (
     MAX_HOURS,
     async_create_guest,
     async_delete_guest,
+    default_description,
     generate_password,
 )
 
@@ -32,7 +33,7 @@ ATTR_ENTRY = "config_entry_id"
 CREATE_GUEST_SCHEMA = vol.Schema(
     {
         vol.Optional(ATTR_ENTRY): cv.string,
-        vol.Required("description"): cv.string,
+        vol.Optional("description"): cv.string,
         vol.Optional("password"): cv.string,
         vol.Optional("duration_hours", default=DEFAULT_HOURS): vol.All(
             vol.Coerce(int), vol.Range(min=1, max=MAX_HOURS)
@@ -73,7 +74,7 @@ def async_setup_services(hass: HomeAssistant) -> None:
             return await async_create_guest(
                 hass,
                 coordinator,
-                call.data["description"],
+                call.data.get("description") or default_description(coordinator),
                 call.data.get("password") or generate_password(),
                 call.data["duration_hours"],
                 call.data["max_devices"],

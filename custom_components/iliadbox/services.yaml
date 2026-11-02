@@ -5,8 +5,8 @@ create_guest_wifi:
         config_entry:
           integration: iliadbox
     description:
-      required: true
-      example: "Guests"
+      required: false
+      example: "Weekend guests"
       selector:
         text:
     password:

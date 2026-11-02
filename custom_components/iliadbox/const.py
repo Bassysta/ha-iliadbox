@@ -15,7 +15,7 @@ DEFAULT_LOG_LEVEL = "info"
 
 APP_ID = "ha.iliadbox"
 APP_NAME = "Home Assistant"
-APP_VERSION = "0.10.2"
+APP_VERSION = "0.10.3"
 DEVICE_NAME = "Home Assistant"
 
 # LAN devices not seen for more than this many days are hidden (0 = keep all)

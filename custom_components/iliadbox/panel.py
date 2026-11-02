@@ -17,7 +17,13 @@ from homeassistant.core import HomeAssistant, callback
 from .api import IliadboxError
 from .const import APP_VERSION, DOMAIN
 from .coordinator import IliadboxCoordinator
-from .guest import access_qr_svg, async_create_guest, async_delete_guest, wifi_qr
+from .guest import (
+    access_qr_svg,
+    async_create_guest,
+    async_delete_guest,
+    default_description,
+    wifi_qr,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -126,7 +132,11 @@ def ws_get_data(
                 "wifi": data.get("wifi", {}),
                 "radios": list(data.get("radios", {}).values()),
                 "hosts": list(data.get("hosts", {}).values()),
-                "guest": {"ssid": guest["ssid"], "keys": keys},
+                "guest": {
+                    "ssid": guest["ssid"],
+                    "keys": keys,
+                    "default_name": default_description(coordinator),
+                },
             }
         )
     boxes.sort(key=lambda b: (b["title"] or "").lower())

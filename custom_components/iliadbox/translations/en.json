@@ -118,7 +118,7 @@
         },
         "description": {
           "name": "Description",
-          "description": "Name of the access, e.g. who it is for."
+          "description": "Name of the access. Default: box name + box id + guest, e.g. \"iliadbox Server 256B57 guest\"."
         },
         "password": {
           "name": "Password",
