@@ -11,12 +11,26 @@ Custom integration for the **Iliadbox** (the Italian Iliad router, a rebranded F
 
 ## Features
 
-- **Sensors**: internet connection state, download/upload rate, line bandwidth, transferred data, public IPv4/IPv6, line type, uptime, temperatures, fan speed.
-- **Presence detection**: every device seen on the LAN becomes a Home Assistant **device** with a `device_tracker` (`home` / `not_home`), ready for automations.
+- **Every value is an entity**: connection, bandwidth, traffic, public IPs, firmware, temperatures, fan, Wi-Fi radios (clients, channel, network) and more, for fully custom dashboards.
+- **Presence detection**: every device seen on the LAN becomes a Home Assistant **device** with a `device_tracker` and a *Connected* sensor, plus IP, connection type, Wi-Fi signal and traffic. Devices not seen for a configurable number of days are hidden.
 - **Controls**: Wi-Fi on/off switch, reboot button.
-- **Guest Wi-Fi**: create and revoke guest accesses with description, password, duration, max devices and access type. Available from the panel, from a button and as actions for automations.
-- **Sidebar panel**: one page with connection, box status, Wi-Fi, guest accesses and the searchable device list.
-- **Configurable logging**: Error / Info / Debug, switchable from the UI without restarting.
+- **Guest Wi-Fi with QR code**: create and revoke guest accesses with description, password, duration, max devices and access type. Guests join by scanning a **QR code**. Available from the panel, a dashboard card, a button, an `image` entity and actions for automations.
+- **Sidebar panel**: one card per Iliadbox (several boxes supported), then a page per box with connection, status, Wi-Fi, guest accesses and the searchable device list.
+- **Guided permissions**: if the box denies an action, the error explains how to grant the missing permission, and a repair notice stays until it is fixed.
+- **Everything configurable from the UI**: address, port, HTTP/HTTPS, certificate check, polling interval, device age filter, log level.
+
+## What's new
+
+| Version | Highlights |
+|---|---|
+| 0.10.2 | Box errors in English; when a permission is missing the error says how to grant it, plus a repair notice ([Permissions](#permissions)) |
+| 0.10.1 | New original integration icon |
+| 0.10.0 | **Guest Wi-Fi QR code** in the panel, in the dashboard card and as an `image` entity ([QR code](#qr-code)) |
+| 0.9.0 | Hide devices not seen for X days; readable names for devices without a name |
+| 0.8.0 | Sidebar panel with one card per box, for several Iliadbox |
+| 0.7.0 | Every value as an entity; all settings editable from **Configure** |
+
+Full history in the [changelog](CHANGELOG.md).
 
 ## Requirements
 
@@ -88,6 +102,19 @@ The **HACS** list and download page do not use local icons yet: HACS takes icons
 4. Recommended: open the box web interface (`http://<box-ip>`) → **Access management → Applications** and make sure "Home Assistant" has the **Modify settings** permission. It is needed for the Wi-Fi switch, reboot and guest Wi-Fi. Without it, read-only features keep working.
 
 The access token is stored in the Home Assistant config entry. If you revoke it on the box, Home Assistant shows a re-authorization request.
+
+### Permissions
+
+Reading values works with the default permissions. Actions that change the box (Wi-Fi on/off, reboot, creating or revoking guest accesses) need the **Modify settings** permission, which a new authorization may not have.
+
+When it is missing:
+
+- the action fails with an English message that explains how to fix it, for example: *the "Home Assistant" app lacks the "Modify settings" permission. To fix it, open http://192.168.1.254 in a browser, go to Access management → Applications → Home Assistant, enable "Modify settings" and save, then retry*;
+- a notice appears in **Settings → Repairs**, on the box page of the panel and in the guest Wi-Fi card.
+
+![Missing permission notice on the box page](docs/images/permission-notice.png)
+
+To fix it, open `http://<box-ip>` → **Access management → Applications → Home Assistant**, enable **Modify settings** and save. No restart is needed: the integration opens a new session (the box applies permissions per session), the action works at the next attempt and the notices disappear within one poll.
 
 ## Entities
 
@@ -259,10 +286,19 @@ data:
 
 ### QR code
 
-A standard Wi-Fi QR code (`WIFI:T:WPA;S:<network>;P:<password>;;`) lets guests join by pointing the phone camera at it, without typing the password.
+A standard Wi-Fi QR code (`WIFI:T:WPA;S:<network>;P:<password>;;`) lets guests join by pointing the phone camera at it, without typing the password. iPhone and Android cameras read it natively.
 
-- **Panel and dashboard card** (admins): shown next to the password right after creation, and with the **QR** button on every active access.
-- **Entity** `image.<box>_guest_wi_fi_qr_code`: QR of the most recently created access, refreshed when a new access is created. Show it in a dashboard with a *Picture entity* card:
+<table>
+  <tr>
+    <td align="center"><img src="docs/images/guest-card.png" alt="Guest Wi-Fi card with QR code" width="300"><br><sub>Dashboard card right after creating an access</sub></td>
+    <td align="center"><img src="docs/images/qr-entity.png" alt="QR code entity in a dashboard" width="260"><br><sub>QR code entity in a dashboard</sub></td>
+  </tr>
+</table>
+
+**Where to find it**
+
+- **Panel and dashboard card** (admins): the QR appears next to the password right after creating an access. Every active access also has a **QR** button to show it again, for example when a new guest arrives.
+- **Entity** `image.<box>_guest_wi_fi_qr_code` (*Guest Wi-Fi QR code*): QR of the most recently created access, refreshed when a new access is created and unavailable when there is none. Show it with a *Picture entity* card:
 
   ```yaml
   type: picture-entity
@@ -270,7 +306,46 @@ A standard Wi-Fi QR code (`WIFI:T:WPA;S:<network>;P:<password>;;`) lets guests j
   show_state: false
   ```
 
-  The QR contains the guest password and, like any entity, is visible to every Home Assistant user who can see it. Disable the entity if that is not wanted. It is unavailable when there is no active access.
+**Example: guest button with QR popup**
+
+A [button-card](https://github.com/custom-cards/button-card) + [browser_mod](https://github.com/thomasloven/hass-browser_mod) button: yellow when an access is active, **tap** shows the QR to the guest, **hold** opens the full management card.
+
+```yaml
+type: custom:button-card
+name: Guest Wi-Fi
+entity: sensor.iliadbox_server_guest_wi_fi
+icon: mdi:wifi-star
+state:
+  - operator: ">"
+    value: 0
+    icon: mdi:qrcode
+    styles:
+      card:
+        - background-color: rgb(255,204,0)
+tap_action:
+  action: fire-dom-event
+  browser_mod:
+    service: browser_mod.popup
+    data:
+      title: Guest Wi-Fi
+      content:
+        type: picture-entity
+        entity: image.iliadbox_server_guest_wi_fi_qr_code
+        show_name: false
+        show_state: false
+hold_action:
+  action: fire-dom-event
+  browser_mod:
+    service: browser_mod.popup
+    data:
+      title: Manage guest Wi-Fi
+      content:
+        type: custom:iliadbox-guest-card
+```
+
+Entity IDs start with the name of the box device: check yours in **Settings → Entities**.
+
+**Privacy**: the QR contains the guest password. In the panel and the card it is shown to admins only; the `image` entity, like any entity, is visible to every Home Assistant user who can see it. Disable the entity if that is not wanted.
 
 QR codes are generated locally by Home Assistant with the [segno](https://pypi.org/project/segno/) library, installed automatically with the integration.
 
