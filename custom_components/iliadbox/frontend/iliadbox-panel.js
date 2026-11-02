@@ -221,7 +221,7 @@ class IliadboxPanel extends HTMLElement {
           <h2 id="guest-title">Guest Wi-Fi</h2>
           <form id="guest-form" novalidate ${this._hass.user?.is_admin ? "" : "hidden"}>
             <label>Description
-              <input name="description" maxlength="64" placeholder="e.g. Weekend guests" title="Default: box name + box id + guest" required>
+              <input name="description" maxlength="64" placeholder="e.g. Weekend guests" title="Default: <box id>-guest" required>
             </label>
             <label>Password
               <span class="inline">
@@ -464,7 +464,7 @@ class IliadboxPanel extends HTMLElement {
     this._validateGuest();
   }
 
-  // Default access name (box name + box id + guest), set once per box page
+  // Default access name (<box id>-guest), set once per box page
   _prefillGuestName(force = false) {
     const box = this._box();
     if (!box || (!force && this._nameFor === box.entry_id)) return;

@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.10.4
+
+- Default guest access name is now `<box id>-guest` (e.g. `256B57-guest`).
+
 ## 0.10.3
 
 - Guest accesses get a default name: box name + box id + `guest` (e.g. `iliadbox Server 256B57 guest`). Prefilled in the panel and card forms (still editable), used by the button and by `iliadbox.create_guest_wifi` when no description is given.

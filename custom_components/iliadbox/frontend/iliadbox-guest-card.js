@@ -125,7 +125,7 @@ class IliadboxGuestCard extends HTMLElement {
         <div id="perm"></div>
         <form novalidate ${this._isAdmin ? "" : "hidden"}>
           <label class="wide">Description
-            <input name="description" maxlength="64" placeholder="e.g. Weekend guests" title="Default: box name + box id + guest" required>
+            <input name="description" maxlength="64" placeholder="e.g. Weekend guests" title="Default: <box id>-guest" required>
           </label>
           <label class="wide">Password
             <span class="inline">
@@ -294,7 +294,7 @@ class IliadboxGuestCard extends HTMLElement {
     const box = this._box();
     this.shadowRoot.getElementById("ssid").textContent = box?.guest?.ssid || "";
     if (box && !this._nameSet) {
-      // Default access name (box name + box id + guest), editable
+      // Default access name (<box id>-guest), editable
       this.shadowRoot.querySelector("form").elements.description.value = box.guest?.default_name || "";
       this._nameSet = true;
     }

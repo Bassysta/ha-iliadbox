@@ -118,7 +118,7 @@
         },
         "description": {
           "name": "Description",
-          "description": "Name of the access. Default: box name + box id + guest, e.g. \"iliadbox Server 256B57 guest\"."
+          "description": "Name of the access. Default: <box id>-guest, e.g. \"256B57-guest\" (the box id is the code in the box Wi-Fi names)."
         },
         "password": {
           "name": "Password",

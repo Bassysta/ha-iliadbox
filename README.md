@@ -249,7 +249,7 @@ Guest accesses use the box guest network (`iliadbox-XXXXXX-ospite`). Each access
 
 | Parameter | Default | Rules |
 |---|---|---|
-| Description | box name + box id + `guest`, e.g. `iliadbox Server 256B57 guest` | required, up to 64 characters; the box id is the code in the box Wi-Fi names |
+| Description | `<box id>-guest`, e.g. `256B57-guest` | required, up to 64 characters; the box id is the code in the box Wi-Fi names (`iliadbox-256B57`) |
 | Password | random, 12 characters | 8-63 printable ASCII characters |
 | Duration | 24 hours | 1-8760 hours |
 | Max devices | 0 = unlimited | 0 or more |
@@ -270,7 +270,7 @@ Guest accesses use the box guest network (`iliadbox-XXXXXX-ospite`). Each access
 ```yaml
 action: iliadbox.create_guest_wifi
 data:
-  description: "Weekend guests"   # optional, default: box name + box id + guest
+  description: "Weekend guests"   # optional, default: <box id>-guest
   password: "Holiday2026"   # optional, random if omitted
   duration_hours: 48
   max_devices: 0            # 0 = unlimited

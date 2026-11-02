@@ -30,15 +30,14 @@ _ALPHABET = "".join(c for c in string.ascii_letters + string.digits if c not in 
 
 
 def default_description(coordinator: IliadboxCoordinator) -> str:
-    """Default access name: box name + box id + "guest", e.g. "iliadbox Modem 256B57 guest".
+    """Default access name: "<box id>-guest", e.g. "256B57-guest".
 
     The box id is the end of the box MAC, the same code the box uses in its
-    Wi-Fi network names (iliadbox-256B57).
+    Wi-Fi network names (iliadbox-256B57). Without a MAC: "guest".
     """
     mac = (coordinator.data or {}).get("system", {}).get("mac") or ""
     box_id = mac.replace(":", "").upper()[-6:]
-    parts = [coordinator.config_entry.title, box_id, "guest"]
-    return " ".join(p for p in parts if p)[:64]
+    return f"{box_id}-guest" if box_id else "guest"
 
 
 def generate_password(length: int = 12) -> str:
