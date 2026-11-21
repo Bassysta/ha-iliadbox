@@ -7,19 +7,22 @@ from typing import Any
 
 from homeassistant.components.device_tracker import ScannerEntity
 from homeassistant.core import HomeAssistant, callback
+from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from homeassistant.util import dt as dt_util
 
 from .coordinator import IliadboxConfigEntry, IliadboxCoordinator
-from .entity import box_id, host_device_info
+from .entity import host_device_info
 
 _LOGGER = logging.getLogger(__name__)
 
 
 @callback
-def _enable_trackers_disabled_by_integration(hass: HomeAssistant, entry: IliadboxConfigEntry) -> None:
+def _enable_trackers_disabled_by_integration(
+    hass: HomeAssistant, entry: IliadboxConfigEntry
+) -> None:
     """Before 0.6.0 trackers of unknown devices were created disabled: enable them.
 
     Trackers disabled by the user are left alone.
@@ -45,11 +48,17 @@ async def async_setup_entry(
 
     @callback
     def _add_new() -> None:
-        # Forget hosts hidden by max_age_days, so they are added again if they return
-        tracked.intersection_update(coordinator.data["hosts"])
         new = [mac for mac in coordinator.data["hosts"] if mac not in tracked]
         if new:
             _LOGGER.debug("Adding %d device trackers", len(new))
+            # ScannerEntity ignores _attr_device_info and only links devices
+            # already in the registry. Register hosts before adding trackers,
+            # independently of which sensor platform finishes setup first.
+            for mac in new:
+                dr.async_get(hass).async_get_or_create(
+                    config_entry_id=entry.entry_id,
+                    **host_device_info(coordinator, mac),
+                )
             tracked.update(new)
             async_add_entities(IliadboxTracker(coordinator, mac) for mac in new)
 
@@ -68,12 +77,14 @@ class IliadboxTracker(CoordinatorEntity[IliadboxCoordinator], ScannerEntity):
     def __init__(self, coordinator: IliadboxCoordinator, mac: str) -> None:
         super().__init__(coordinator)
         self._mac = mac
-        self._attr_unique_id = f"{box_id(coordinator)}_{mac}"
-        self._attr_device_info = host_device_info(coordinator, mac)
 
     @property
     def _host(self) -> dict[str, Any]:
         return self.coordinator.data["hosts"].get(self._mac, {})
+
+    @property
+    def available(self) -> bool:
+        return super().available and self._mac in self.coordinator.data["hosts"]
 
     @property
     def mac_address(self) -> str:
@@ -85,7 +96,7 @@ class IliadboxTracker(CoordinatorEntity[IliadboxCoordinator], ScannerEntity):
 
     @property
     def ip_address(self) -> str | None:
-        for l3 in self._host.get("l3connectivities", []):
+        for l3 in self._host.get("l3connectivities") or []:
             if l3.get("af") == "ipv4" and l3.get("active"):
                 return l3.get("addr")
         return None

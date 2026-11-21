@@ -106,9 +106,6 @@ def add_entities_for_new_hosts(
     @callback
     def _add_new() -> None:
         hosts = coordinator.data["hosts"]
-        # Hosts hidden by max_age_days had their device removed: forget them so
-        # their entities are created again if they come back
-        seen.intersection_update(hosts)
         entities: list[Any] = []
         for mac, host in hosts.items():
             if mac not in seen:

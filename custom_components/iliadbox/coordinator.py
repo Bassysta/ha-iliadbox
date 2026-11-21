@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 import asyncio
+from datetime import timedelta
 import logging
 import time
-from datetime import timedelta
 from typing import Any
 
 from homeassistant.config_entries import ConfigEntry
@@ -16,8 +16,20 @@ from homeassistant.helpers import issue_registry as ir
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
-from .api import IliadboxAuthError, IliadboxClient, IliadboxError
-from .const import CONF_MAX_AGE_DAYS, DEFAULT_MAX_AGE_DAYS, DEFAULT_SCAN_INTERVAL, DOMAIN
+from .api import (
+    IliadboxAuthError,
+    IliadboxClient,
+    IliadboxError,
+    IliadboxUnsupportedError,
+)
+from .const import (
+    CONF_MAX_AGE_DAYS,
+    CONF_READ_ONLY,
+    DEFAULT_MAX_AGE_DAYS,
+    DEFAULT_SCAN_INTERVAL,
+    DOMAIN,
+)
+from .history import NetworkHistory
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -42,6 +54,14 @@ class IliadboxCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         )
         self.client = client
         self.hidden_hosts = 0
+        self.history = NetworkHistory(hass, entry)
+        self._unsupported: set[str] = set()
+        self._optional_cache: dict[str, list[dict[str, Any]]] = {
+            "guest": [],
+            "radios": [],
+        }
+        self._last_permission_attempt = 0.0
+        self.source_updated: dict[str, float] = {}
         _LOGGER.debug("Polling the box every %s seconds", interval)
 
     async def _async_update_data(self) -> dict[str, Any]:
@@ -56,39 +76,96 @@ class IliadboxCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             _LOGGER.error("Box rejected the app token: %s", err)
             raise ConfigEntryAuthFailed(str(err)) from err
         except IliadboxError as err:
+            self.history.reachable(False)
             # DataUpdateCoordinator logs this once and logs again on recovery
             raise UpdateFailed(str(err)) from err
 
-        # Permissions only change with a new session: while "settings" is missing,
-        # open one at each poll so a permission granted on the box is picked up
-        if "settings" not in self.client.permissions:
+        # Permissions are refreshed infrequently, and immediately after a denied
+        # write by the client. Intentional read-only mode never probes for them.
+        if (
+            not self.config_entry.options.get(CONF_READ_ONLY, False)
+            and "settings" not in self.client.permissions
+            and time.monotonic()
+            - max(self.client.permissions_checked_at, self._last_permission_attempt)
+            >= 300
+        ):
+            self._last_permission_attempt = time.monotonic()
             try:
                 await self.client.open_session()
+            except IliadboxAuthError as err:
+                raise ConfigEntryAuthFailed(str(err)) from err
             except IliadboxError as err:
                 _LOGGER.debug("Cannot refresh permissions: %s", err)
         self._update_permission_issue()
-
-        # Wi-Fi radios and guest accesses are optional: a failure here must not
-        # mark the box unavailable
-        try:
-            guest_keys, radios = await asyncio.gather(
-                self.client.get_guest_keys(), self.client.get_wifi_radios()
-            )
-        except IliadboxError as err:
-            _LOGGER.debug("Wi-Fi radio or guest data unavailable: %s", err)
-            guest_keys, radios = [], []
-        guest_ssid = next((r["guest_ssid"] for r in radios if r.get("guest_ssid")), None)
+        freshness: dict[str, bool] = {}
+        methods = {
+            "guest": self.client.get_guest_keys,
+            "radios": self.client.get_wifi_radios,
+        }
+        names = [name for name in methods if name not in self._unsupported]
+        results = await asyncio.gather(*(methods[name]() for name in names), return_exceptions=True)
+        now = time.time()
+        for name, result in zip(names, results, strict=True):
+            if isinstance(result, IliadboxAuthError):
+                raise ConfigEntryAuthFailed(str(result)) from result
+            if isinstance(result, IliadboxUnsupportedError):
+                self._unsupported.add(name)
+            if isinstance(result, Exception):
+                if not isinstance(result, IliadboxError):
+                    raise result
+                _LOGGER.debug("%s data unavailable: %s", name, result)
+                freshness[name] = False
+                continue
+            freshness[name] = True
+            self.source_updated[name] = now
+            if name == "guest":
+                result = [
+                    {
+                        **key,
+                        "expires_at": now + key["remaining"]
+                        if key.get("remaining") is not None
+                        else None,
+                    }
+                    for key in result
+                ]
+            self._optional_cache[name] = result
+        for name in self._unsupported:
+            freshness[name] = False
+        guest_keys = self._optional_cache["guest"]
+        radio_details = self._optional_cache["radios"]
+        # Preserve existing band entity IDs; aggregate BSS instead of overwriting
+        # them, and expose individual BSS/AP identities for detailed inspection.
+        radios: dict[str, dict[str, Any]] = {}
+        for radio in radio_details:
+            if not (band := radio.get("band")):
+                continue
+            if band not in radios:
+                radios[band] = {**radio, "members": [radio]}
+            else:
+                aggregate = radios[band]
+                aggregate["members"].append(radio)
+                aggregate["clients"] = (aggregate.get("clients") or 0) + (radio.get("clients") or 0)
+                if radio.get("state") == "active":
+                    aggregate["state"] = "active"
+                for field in ("ssid", "channel", "channel_width", "encryption"):
+                    if aggregate.get(field) != radio.get(field):
+                        aggregate[field] = None
+        guest_ssid = next((r["guest_ssid"] for r in radio_details if r.get("guest_ssid")), None)
 
         connection = connection or {}
         # The box remembers every device ever seen: keep the connected ones and
         # those active within max_age_days (0 = keep all)
         max_age = self.config_entry.options.get(CONF_MAX_AGE_DAYS, DEFAULT_MAX_AGE_DAYS)
         oldest = time.time() - max_age * 86400
-        hosts_by_mac = {
+        all_hosts = {
             h["l2ident"]["id"].lower(): h
             for h in hosts
             if h.get("l2ident", {}).get("type") == "mac_address"
-            and (not max_age or h.get("active") or (h.get("last_activity") or 0) >= oldest)
+        }
+        hosts_by_mac = {
+            mac: h
+            for mac, h in all_hosts.items()
+            if not max_age or h.get("active") or (h.get("last_activity") or 0) >= oldest
         }
         self.hidden_hosts = len(hosts) - len(hosts_by_mac)
         self._log_changes(connection, wifi or {}, hosts_by_mac)
@@ -103,19 +180,25 @@ class IliadboxCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             "on" if (wifi or {}).get("enabled") else "off",
             len(guest_keys),
         )
-        return {
+        data = {
             "connection": connection,
             "system": system or {},
             "hosts": hosts_by_mac,
             "wifi": wifi or {},
             "guest": {"ssid": guest_ssid, "keys": guest_keys},
-            "radios": {r["band"]: r for r in radios if r.get("band")},
+            "radios": radios,
+            "radio_details": radio_details,
+            "freshness": freshness,
         }
+        self.history.observe(data, all_hosts)
+        return data
 
     def _update_permission_issue(self) -> None:
         """Repair issue while the app lacks "Modify settings" on the box."""
         issue_id = f"missing_settings_{self.config_entry.entry_id}"
-        if "settings" in self.client.permissions:
+        if "settings" in self.client.permissions or self.config_entry.options.get(
+            CONF_READ_ONLY, False
+        ):
             ir.async_delete_issue(self.hass, DOMAIN, issue_id)
             return
         ir.async_create_issue(
@@ -127,7 +210,7 @@ class IliadboxCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             translation_key="missing_settings_permission",
             translation_placeholders={
                 "box": self.config_entry.title,
-                "host": self.client.host,
+                "host": self.client.configuration_url,
             },
         )
 
@@ -166,4 +249,5 @@ class IliadboxCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             name=self.config_entry.title,
             sw_version=system.get("firmware_version"),
             serial_number=system.get("serial"),
+            configuration_url=self.client.configuration_url,
         )

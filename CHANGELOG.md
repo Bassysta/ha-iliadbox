@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.11.0
+
+- Show only active IPv4 addresses in LAN device sensors; report unknown instead of an inactive historical address.
+- Add persistent new-device recognition, optional notifications and automation events, with an initial baseline and per-box isolation.
+- Add a local network event timeline (200 events, seven days), including WAN outage durations when observed.
+- Preserve error classifications and healthy optional data; validate API envelopes, protect concurrent session renewal and verify router identity during reauthorization.
+- Preserve all BSS on a band, discover late radio entities, fix cached guest expiry and retain filtered host registry customizations.
+- Remove credentials from notifications and background snapshots; enforce admin/internal-automation writes and an explicit QR-image sharing opt-in. Add read-only mode.
+- Share frontend components/subscriptions, retain command errors, require explicit multi-box selection, and translate the UI/configuration into Italian.
+- Correct connection URLs/IPv6 validation and clarify global logging. Raise minimum HA to 2024.12.5.
+- Add Python/HA and frontend regression suites and CI.
+
 ## 0.10.4
 
 - Default guest access name is now `<box id>-guest` (e.g. `256B57-guest`).

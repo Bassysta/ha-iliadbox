@@ -1,0 +1,5 @@
+# Matching HA 2026.10.4 harness. The current external harness pins this version.
+pytest-homeassistant-custom-component==0.13.375
+home-assistant-frontend==20260930.5
+segno==1.6.6
+ruff==0.17.6

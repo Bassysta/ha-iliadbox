@@ -4,13 +4,18 @@ from __future__ import annotations
 
 import logging
 
-import voluptuous as vol
-
 from homeassistant.config_entries import ConfigEntryState
-from homeassistant.core import HomeAssistant, ServiceCall, ServiceResponse, SupportsResponse
+from homeassistant.core import (
+    HomeAssistant,
+    ServiceCall,
+    ServiceResponse,
+    SupportsResponse,
+)
 from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
 from homeassistant.helpers import config_validation as cv
+import voluptuous as vol
 
+from .access import async_check_write
 from .api import IliadboxError
 from .const import DOMAIN
 from .coordinator import IliadboxCoordinator
@@ -48,28 +53,28 @@ CREATE_GUEST_SCHEMA = vol.Schema(
 DELETE_GUEST_SCHEMA = vol.Schema(
     {
         vol.Optional(ATTR_ENTRY): cv.string,
-        vol.Required("access_id"): vol.Coerce(int),
+        vol.Required("access_id"): vol.All(vol.Coerce(int), vol.Range(min=0)),
     }
 )
 
 
 def _coordinator(hass: HomeAssistant, entry_id: str | None) -> IliadboxCoordinator:
     loaded = [
-        e for e in hass.config_entries.async_entries(DOMAIN)
-        if e.state is ConfigEntryState.LOADED
+        e for e in hass.config_entries.async_entries(DOMAIN) if e.state is ConfigEntryState.LOADED
     ]
     if entry_id:
         loaded = [e for e in loaded if e.entry_id == entry_id]
     if not loaded:
-        raise ServiceValidationError("No loaded Iliadbox found")
+        raise ServiceValidationError(translation_domain=DOMAIN, translation_key="no_box")
     if len(loaded) > 1:
-        raise ServiceValidationError("Several Iliadbox configured: set config_entry_id")
+        raise ServiceValidationError(translation_domain=DOMAIN, translation_key="select_box")
     return loaded[0].runtime_data
 
 
 def async_setup_services(hass: HomeAssistant) -> None:
     async def create_guest(call: ServiceCall) -> ServiceResponse:
         coordinator = _coordinator(hass, call.data.get(ATTR_ENTRY))
+        await async_check_write(hass, coordinator, call.context)
         try:
             return await async_create_guest(
                 hass,
@@ -81,13 +86,22 @@ def async_setup_services(hass: HomeAssistant) -> None:
                 call.data["access_type"],
             )
         except ValueError as err:
-            raise ServiceValidationError(str(err)) from err
+            raise ServiceValidationError(
+                translation_domain=DOMAIN,
+                translation_key="invalid_guest",
+                translation_placeholders={"error": str(err)},
+            ) from err
         except IliadboxError as err:
             _LOGGER.error("Cannot create guest Wi-Fi: %s", err)
-            raise HomeAssistantError(f"Cannot create guest Wi-Fi: {err}") from err
+            raise HomeAssistantError(
+                translation_domain=DOMAIN,
+                translation_key="box_error",
+                translation_placeholders={"error": str(err)},
+            ) from err
 
     async def delete_guest(call: ServiceCall) -> None:
         coordinator = _coordinator(hass, call.data.get(ATTR_ENTRY))
+        await async_check_write(hass, coordinator, call.context)
         try:
             await async_delete_guest(hass, coordinator, call.data["access_id"])
         except IliadboxError as err:

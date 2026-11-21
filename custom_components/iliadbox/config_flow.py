@@ -5,15 +5,18 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-import voluptuous as vol
-
 from homeassistant.config_entries import (
     ConfigEntry,
     ConfigFlow,
     ConfigFlowResult,
     OptionsFlow,
 )
-from homeassistant.const import CONF_HOST, CONF_PORT, CONF_SCAN_INTERVAL, CONF_VERIFY_SSL
+from homeassistant.const import (
+    CONF_HOST,
+    CONF_PORT,
+    CONF_SCAN_INTERVAL,
+    CONF_VERIFY_SSL,
+)
 from homeassistant.core import callback
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.selector import (
@@ -24,12 +27,23 @@ from homeassistant.helpers.selector import (
     SelectSelectorConfig,
     SelectSelectorMode,
 )
+import voluptuous as vol
 
-from .api import IliadboxClient, IliadboxConnectionError, IliadboxError, IliadboxSSLError
+from .api import (
+    IliadboxAuthError,
+    IliadboxClient,
+    IliadboxConnectionError,
+    IliadboxError,
+    IliadboxSSLError,
+    normalize_host,
+)
 from .const import (
     CONF_APP_TOKEN,
     CONF_LOG_LEVEL,
     CONF_MAX_AGE_DAYS,
+    CONF_NOTIFY_NEW_DEVICES,
+    CONF_READ_ONLY,
+    CONF_SHARE_GUEST_QR,
     CONF_USE_SSL,
     DEFAULT_HOST,
     DEFAULT_LOG_LEVEL,
@@ -71,7 +85,9 @@ class IliadboxConfigFlow(ConfigFlow, domain=DOMAIN):
         return vol.Schema(
             {
                 vol.Required(CONF_HOST, default=self._host): str,
-                vol.Required(CONF_PORT, default=self._port): int,
+                vol.Required(CONF_PORT, default=self._port): vol.All(
+                    int, vol.Range(min=1, max=65535)
+                ),
                 vol.Required(CONF_USE_SSL, default=self._use_ssl): bool,
                 vol.Required(CONF_VERIFY_SSL, default=self._verify_ssl): bool,
             }
@@ -81,8 +97,11 @@ class IliadboxConfigFlow(ConfigFlow, domain=DOMAIN):
         self, user_input: dict[str, Any], app_token: str | None = None
     ) -> tuple[dict[str, Any] | None, dict[str, str]]:
         """Read the connection form and reach the box. Returns (box info, errors)."""
-        self._host = user_input[CONF_HOST].strip()
-        self._port = user_input[CONF_PORT]
+        try:
+            self._host = normalize_host(user_input[CONF_HOST])
+            self._port = vol.All(int, vol.Range(min=1, max=65535))(user_input[CONF_PORT])
+        except (ValueError, vol.Invalid):
+            return None, {"base": "cannot_connect"}
         self._use_ssl = user_input[CONF_USE_SSL]
         self._verify_ssl = user_input[CONF_VERIFY_SSL]
         if self._use_ssl and self._port == DEFAULT_PORT:
@@ -104,6 +123,8 @@ class IliadboxConfigFlow(ConfigFlow, domain=DOMAIN):
         except IliadboxConnectionError as err:
             _LOGGER.error("Cannot reach box at %s:%s: %s", self._host, self._port, err)
             return None, {"base": "cannot_connect"}
+        except IliadboxError:
+            return None, {"base": "cannot_connect"}
 
     def _connection_data(self) -> dict[str, Any]:
         return {
@@ -113,14 +134,16 @@ class IliadboxConfigFlow(ConfigFlow, domain=DOMAIN):
             CONF_VERIFY_SSL: self._verify_ssl,
         }
 
-    async def async_step_user(
-        self, user_input: dict[str, Any] | None = None
-    ) -> ConfigFlowResult:
+    async def async_step_user(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         errors: dict[str, str] = {}
         if user_input is not None:
             info, errors = await self._async_connect(user_input)
             if info is not None:
-                if self.source != "reauth":
+                if self.source == "reauth":
+                    entry = self._get_reauth_entry()
+                    if (info.get("uid") or self._host) != entry.unique_id:
+                        return self.async_abort(reason="wrong_box")
+                else:
                     await self.async_set_unique_id(info.get("uid") or self._host)
                     self._abort_if_unique_id_configured()
                 self._box_name = info.get("device_name") or "Iliadbox"
@@ -144,17 +167,19 @@ class IliadboxConfigFlow(ConfigFlow, domain=DOMAIN):
         else:
             info, errors = await self._async_connect(user_input, entry.data[CONF_APP_TOKEN])
             if info is not None:
-                if entry.unique_id and info.get("uid") and info["uid"] != entry.unique_id:
+                if entry.unique_id and (info.get("uid") or self._host) != entry.unique_id:
                     _LOGGER.error("Box at %s is not the configured one", self._host)
                     return self.async_abort(reason="wrong_box")
                 try:
                     await self._client.open_session()
                 except IliadboxConnectionError:
                     errors["base"] = "cannot_connect"
-                except IliadboxError as err:
+                except IliadboxAuthError as err:
                     # Token not valid on this box: a new authorization is needed
                     _LOGGER.error("Stored token rejected by %s: %s", self._host, err)
                     errors["base"] = "invalid_auth"
+                except IliadboxError:
+                    errors["base"] = "cannot_connect"
                 else:
                     _LOGGER.info(
                         "Connection changed to %s:%s (HTTPS %s, certificate check %s)",
@@ -171,18 +196,17 @@ class IliadboxConfigFlow(ConfigFlow, domain=DOMAIN):
             step_id="reconfigure", data_schema=self._connection_schema(), errors=errors
         )
 
-    async def async_step_link(
-        self, user_input: dict[str, Any] | None = None
-    ) -> ConfigFlowResult:
+    async def async_step_link(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         """Request a token, then wait for the user to accept it on the box."""
         assert self._client is not None
         errors: dict[str, str] = {}
 
         try:
             if self._track_id is None:
-                self._app_token, self._track_id = (
-                    await self._client.request_authorization()
-                )
+                (
+                    self._app_token,
+                    self._track_id,
+                ) = await self._client.request_authorization()
             elif user_input is not None:
                 status = await self._client.authorization_status(self._track_id)
                 _LOGGER.info("Authorization request %s status: %s", self._track_id, status)
@@ -212,15 +236,11 @@ class IliadboxConfigFlow(ConfigFlow, domain=DOMAIN):
         data = {**self._connection_data(), CONF_APP_TOKEN: self._app_token}
         if self.source == "reauth":
             _LOGGER.info("Re-authorization of %s completed", self._host)
-            return self.async_update_reload_and_abort(
-                self._get_reauth_entry(), data=data
-            )
+            return self.async_update_reload_and_abort(self._get_reauth_entry(), data=data)
         _LOGGER.info("Box %s at %s configured", self._box_name, self._host)
         return self.async_create_entry(title=self._box_name, data=data)
 
-    async def async_step_reauth(
-        self, entry_data: dict[str, Any]
-    ) -> ConfigFlowResult:
+    async def async_step_reauth(self, entry_data: dict[str, Any]) -> ConfigFlowResult:
         """Token revoked: ask a new one on the same host."""
         _LOGGER.warning("Starting re-authorization for box at %s", entry_data[CONF_HOST])
         self._host = entry_data[CONF_HOST]
@@ -237,9 +257,7 @@ class IliadboxOptionsFlow(OptionsFlow):
     before saving. The entry reloads after saving.
     """
 
-    async def async_step_init(
-        self, user_input: dict[str, Any] | None = None
-    ) -> ConfigFlowResult:
+    async def async_step_init(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         entry = self.config_entry
         errors: dict[str, str] = {}
         if user_input is not None:
@@ -249,9 +267,16 @@ class IliadboxOptionsFlow(OptionsFlow):
                 CONF_USE_SSL: user_input[CONF_USE_SSL],
                 CONF_VERIFY_SSL: user_input[CONF_VERIFY_SSL],
             }
+            try:
+                connection[CONF_HOST] = normalize_host(connection[CONF_HOST])
+                connection[CONF_PORT] = vol.All(int, vol.Range(min=1, max=65535))(
+                    connection[CONF_PORT]
+                )
+            except (ValueError, vol.Invalid):
+                errors["base"] = "cannot_connect"
             if connection[CONF_USE_SSL] and connection[CONF_PORT] == DEFAULT_PORT:
                 connection[CONF_PORT] = DEFAULT_SSL_PORT
-            changed = any(entry.data.get(k) != v for k, v in connection.items())
+            changed = not errors and any(entry.data.get(k) != v for k, v in connection.items())
             if changed:
                 errors = await self._async_check_connection(connection)
             if not errors:
@@ -271,6 +296,9 @@ class IliadboxOptionsFlow(OptionsFlow):
                         CONF_SCAN_INTERVAL: int(user_input[CONF_SCAN_INTERVAL]),
                         CONF_MAX_AGE_DAYS: int(user_input[CONF_MAX_AGE_DAYS]),
                         CONF_LOG_LEVEL: user_input[CONF_LOG_LEVEL],
+                        CONF_NOTIFY_NEW_DEVICES: user_input.get(CONF_NOTIFY_NEW_DEVICES, False),
+                        CONF_READ_ONLY: user_input.get(CONF_READ_ONLY, False),
+                        CONF_SHARE_GUEST_QR: user_input.get(CONF_SHARE_GUEST_QR, False),
                     }
                 )
 
@@ -279,8 +307,19 @@ class IliadboxOptionsFlow(OptionsFlow):
             step_id="init",
             data_schema=vol.Schema(
                 {
+                    vol.Required(
+                        CONF_NOTIFY_NEW_DEVICES,
+                        default=current.get(CONF_NOTIFY_NEW_DEVICES, False),
+                    ): bool,
+                    vol.Required(CONF_READ_ONLY, default=current.get(CONF_READ_ONLY, False)): bool,
+                    vol.Required(
+                        CONF_SHARE_GUEST_QR,
+                        default=current.get(CONF_SHARE_GUEST_QR, False),
+                    ): bool,
                     vol.Required(CONF_HOST, default=current[CONF_HOST]): str,
-                    vol.Required(CONF_PORT, default=current[CONF_PORT]): int,
+                    vol.Required(CONF_PORT, default=current[CONF_PORT]): vol.All(
+                        int, vol.Range(min=1, max=65535)
+                    ),
                     vol.Required(CONF_USE_SSL, default=current.get(CONF_USE_SSL, False)): bool,
                     vol.Required(
                         CONF_VERIFY_SSL, default=current.get(CONF_VERIFY_SSL, False)
@@ -310,7 +349,8 @@ class IliadboxOptionsFlow(OptionsFlow):
                         )
                     ),
                     vol.Required(
-                        CONF_LOG_LEVEL, default=current.get(CONF_LOG_LEVEL, DEFAULT_LOG_LEVEL)
+                        CONF_LOG_LEVEL,
+                        default=current.get(CONF_LOG_LEVEL, DEFAULT_LOG_LEVEL),
                     ): SelectSelector(
                         SelectSelectorConfig(
                             options=LOG_LEVELS,
@@ -337,7 +377,7 @@ class IliadboxOptionsFlow(OptionsFlow):
         )
         try:
             info = await client.discover()
-            if entry.unique_id and info.get("uid") and info["uid"] != entry.unique_id:
+            if entry.unique_id and (info.get("uid") or connection[CONF_HOST]) != entry.unique_id:
                 _LOGGER.error("Box at %s is not the configured one", connection[CONF_HOST])
                 return {"base": "wrong_box"}
             await client.open_session()
@@ -347,7 +387,9 @@ class IliadboxOptionsFlow(OptionsFlow):
         except IliadboxConnectionError as err:
             _LOGGER.error("Cannot reach box at %s: %s", connection[CONF_HOST], err)
             return {"base": "cannot_connect"}
-        except IliadboxError as err:
+        except IliadboxAuthError as err:
             _LOGGER.error("Stored token rejected by %s: %s", connection[CONF_HOST], err)
             return {"base": "invalid_auth"}
+        except IliadboxError:
+            return {"base": "cannot_connect"}
         return {}

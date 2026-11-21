@@ -2,18 +2,17 @@
 
 from __future__ import annotations
 
+from datetime import timedelta
 import io
 import logging
 import secrets
 import string
-from datetime import timedelta
 from typing import Any
-
-from segno import helpers as segno_helpers
 
 from homeassistant.components import persistent_notification
 from homeassistant.core import HomeAssistant
 from homeassistant.util import dt as dt_util
+from segno import helpers as segno_helpers
 
 from .coordinator import IliadboxCoordinator
 
@@ -94,15 +93,21 @@ async def async_create_guest(
     max_devices: int,
     access_type: str,
 ) -> dict[str, Any]:
-    """Create the access on the box, notify the password and return its details."""
+    """Create the access and return credentials only to the authorized caller."""
     validate(description, password, hours, max_devices, access_type)
     result = await coordinator.client.create_guest_key(
         description.strip(), password, hours * 3600, max_devices, access_type
     )
+    expires = dt_util.now() + timedelta(
+        seconds=(
+            result.get("remaining")
+            if isinstance(result.get("remaining"), (int, float))
+            else hours * 3600
+        )
+    )
     await coordinator.async_request_refresh()
 
     ssid = coordinator.data["guest"]["ssid"]
-    expires = dt_util.now() + timedelta(seconds=result.get("remaining", hours * 3600))
     details = {
         "id": result["id"],
         "ssid": ssid,
@@ -115,12 +120,14 @@ async def async_create_guest(
     }
     persistent_notification.async_create(
         hass,
-        f"**Network:** `{ssid}`\n\n**Password:** `{password}`\n\n"
-        f"Access: {'internet only' if access_type == 'net_only' else 'full network'} · "
-        f"devices: {max_devices or 'unlimited'} · "
-        f"expires: {expires.strftime('%Y-%m-%d %H:%M')}",
-        title=f"Guest Wi-Fi created: {details['description']}",
-        notification_id=f"iliadbox_guest_{result['id']}",
+        (
+            "Accesso creato. Apri il pannello Iliadbox come amministratore per visualizzare password e QR."
+            if hass.config.language.startswith("it")
+            else "Access created. Open the Iliadbox panel as an administrator to view its password and QR code."
+        ),
+        title=("Wi-Fi ospiti: " if hass.config.language.startswith("it") else "Guest Wi-Fi: ")
+        + details["description"],
+        notification_id=f"iliadbox_guest_{coordinator.config_entry.entry_id}_{result['id']}",
     )
     _LOGGER.info("Guest Wi-Fi access %s created, expires %s", result["id"], details["expires"])
     return details
@@ -130,5 +137,7 @@ async def async_delete_guest(
     hass: HomeAssistant, coordinator: IliadboxCoordinator, access_id: int
 ) -> None:
     await coordinator.client.delete_guest_key(access_id)
-    persistent_notification.async_dismiss(hass, f"iliadbox_guest_{access_id}")
+    persistent_notification.async_dismiss(
+        hass, f"iliadbox_guest_{coordinator.config_entry.entry_id}_{access_id}"
+    )
     await coordinator.async_request_refresh()

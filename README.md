@@ -5,7 +5,7 @@
 [![HACS Custom](https://img.shields.io/badge/HACS-Custom-41BDF5.svg)](https://hacs.xyz/docs/faq/custom_repositories)
 [![Validate](https://github.com/Bassysta/ha-iliadbox/actions/workflows/validate.yml/badge.svg)](https://github.com/Bassysta/ha-iliadbox/actions/workflows/validate.yml)
 
-Custom integration for the **Iliadbox** (the Italian Iliad router, a rebranded Freebox). It talks to the box through the Freebox OS API **over the local network only**, with no cloud account and no external Python libraries.
+Custom integration for the **Iliadbox** (the Italian Iliad router, a rebranded Freebox). It talks to the box through the Freebox OS API **over the local network only**, with no cloud account. QR codes are generated locally with `segno`.
 
 ![Iliadbox panel: one card per box](docs/images/home.png)
 
@@ -19,10 +19,16 @@ Custom integration for the **Iliadbox** (the Italian Iliad router, a rebranded F
 - **Guided permissions**: if the box denies an action, the error explains how to grant the missing permission, and a repair notice stays until it is fixed.
 - **Everything configurable from the UI**: address, port, HTTP/HTTPS, certificate check, polling interval, device age filter, log level.
 
+
+- **New-device detection**: persistent recognition of known/ignored devices, optional first-seen notifications and an automation event. No startup notification storm.
+- **Network timeline**: the latest 200 events over seven days, including WAN/IP changes, router availability/restarts, Wi-Fi, device presence and guest-access lifecycle. Stored locally per box.
+- **Italian and English UI**, shared guest controls and independent freshness indicators for guest and radio data.
+
 ## What's new
 
 | Version | Highlights |
 |---|---|
+| 0.11.0 | New-device detection, network timeline, Italian UI, reliability and credential-handling fixes |
 | 0.10.2 | Box errors in English; when a permission is missing the error says how to grant it, plus a repair notice ([Permissions](#permissions)) |
 | 0.10.1 | New original integration icon |
 | 0.10.0 | **Guest Wi-Fi QR code** in the panel, in the dashboard card and as an `image` entity ([QR code](#qr-code)) |
@@ -34,7 +40,7 @@ Full history in the [changelog](CHANGELOG.md).
 
 ## Requirements
 
-- Home Assistant **2024.11** or newer.
+- Home Assistant **2024.12.5** or newer.
 - An Iliadbox (see the tested versions below).
 - Home Assistant must run **on the same local network as the box** (see below).
 - Physical access to the box once, to accept the authorization request on its display.
@@ -144,7 +150,7 @@ Every value read from the box is a separate entity, so dashboards and automation
 | sensor | Guest access *name* (expiry, one per access, added and removed automatically) | on |
 | switch | Wi-Fi | on, needs *Modify settings* |
 | button | Reboot, Create guest Wi-Fi | on, needs *Modify settings* |
-| image | Guest Wi-Fi QR code (latest access) | on |
+| image | Guest Wi-Fi QR code (latest access) | off; explicit sharing opt-in required |
 
 ### Wi-Fi radios (one set per band: 2.4 GHz, 5 GHz)
 
@@ -187,8 +193,11 @@ The box is polled every **60 seconds** by default (see [Settings](#settings)), w
 | Use HTTPS | off | |
 | Verify the certificate | on at setup | turn off for HTTPS by IP address |
 | Polling interval | 60 s | 10-3600 s; shorter = faster presence detection |
-| Hide devices not seen for | 30 days | devices whose last activity is older are removed from HA and the panel; they come back if they reconnect. 0 = show all |
-| Log level | Info | Error / Info / Debug |
+| Device activity window | 30 days | older inactive devices are filtered from the panel and become unavailable; HA registry entries and customizations are preserved. 0 = show all |
+| Log level | Info | Global integration level; the most verbose setting among configured boxes wins |
+| Notify about new devices | off | Persistent notification once per unfamiliar active MAC |
+| Read-only mode | off | Block router writes and suppress missing-settings reminders |
+| Share guest QR | off | Permit the image entity to expose guest credentials; also enable that entity manually |
 
 Connection changes are tested on the box before saving, using the current authorization: no confirmation on the box is needed. The integration reloads after saving.
 
@@ -212,7 +221,7 @@ The box marks a device as disconnected a few minutes after its last traffic, so 
 
 ## Sidebar panel
 
-The integration adds an **Iliadbox** entry to the sidebar. It refreshes every 10 seconds and follows the Home Assistant light/dark theme. It supports **several Iliadbox** at once: add each one with *Add integration → Iliadbox*.
+The integration adds an **Iliadbox** entry to the sidebar. It subscribes to cached coordinator updates without additional per-tab router polling and follows the Home Assistant light/dark theme. It supports **several Iliadbox** at once: add each one with *Add integration → Iliadbox*.
 
 **Home**: one card per configured box, with the integration icon, name, model, local address, status (*Online*, *Stale data*, *Not reachable*), public IP, firmware and uptime, current download, devices online, Wi-Fi clients and guest accesses. Click a card to manage that box. Boxes that are configured but not running are shown greyed out.
 
@@ -226,7 +235,7 @@ The integration adds an **Iliadbox** entry to the sidebar. It refreshes every 10
 
 ![Box page](docs/images/overview.png)
 
-Reboot, Wi-Fi and guest actions, and guest passwords, are available only to Home Assistant **admin** users.
+Reboot, Wi-Fi and guest actions, and guest passwords, require Home Assistant **admin** privileges for user-initiated requests. Internal automations can also call write actions, unless read-only mode is enabled.
 
 <p align="center"><img src="docs/images/mobile.png" alt="Panel on a phone" width="320"></p>
 
@@ -264,7 +273,7 @@ Guest accesses use the box guest network (`iliadbox-XXXXXX-ospite`). Each access
   ```
 
   It also appears in the card picker as *Iliadbox guest Wi-Fi*. Works with `card_mod` for custom styling.
-- **Button** `Create guest Wi-Fi`: one press, all defaults, default description. The password is shown in a Home Assistant notification.
+- **Button** `Create guest Wi-Fi`: one press, all defaults, default description. A notification confirms creation without including the password. Open the admin panel to retrieve the password and QR.
 - **Actions** for automations and scripts:
 
 ```yaml
@@ -297,7 +306,7 @@ A standard Wi-Fi QR code (`WIFI:T:WPA;S:<network>;P:<password>;;`) lets guests j
 
 **Where to find it**
 
-- **Panel and dashboard card** (admins): the QR appears next to the password right after creating an access. Every active access also has a **QR** button to show it again, for example when a new guest arrives.
+- **Panel and dashboard card** (admins): the QR appears next to the password right after creating an access. Every active access also has a **Show password and QR** button to show it again, for example when a new guest arrives.
 - **Entity** `image.<box>_guest_wi_fi_qr_code` (*Guest Wi-Fi QR code*): QR of the most recently created access, refreshed when a new access is created and unavailable when there is none. Show it with a *Picture entity* card:
 
   ```yaml
@@ -345,7 +354,7 @@ hold_action:
 
 Entity IDs start with the name of the box device: check yours in **Settings → Entities**.
 
-**Privacy**: the QR contains the guest password. In the panel and the card it is shown to admins only; the `image` entity, like any entity, is visible to every Home Assistant user who can see it. Disable the entity if that is not wanted.
+**Privacy**: the QR contains the guest password. Panel/card credentials are fetched only on an explicit admin request (or returned immediately after creation). The `image` entity is disabled by default and additionally requires **Share guest QR** in the integration options, including for existing installations. Enabling both deliberately shares guest credentials with users who can read that entity. Custom actions and entity writes require an admin user or an internal automation context; read-only mode blocks router writes from every entry point. Service responses and automation traces can contain passwords: keep access to those traces restricted.
 
 QR codes are generated locally by Home Assistant with the [segno](https://pypi.org/project/segno/) library, installed automatically with the integration.
 
@@ -371,7 +380,7 @@ The level applies immediately, without restarting. Logs are under **Settings →
 | *Request timed out* | Press Submit to send a new request and accept it within a couple of minutes. |
 | Wi-Fi switch, reboot or guest Wi-Fi fail with *lacks the "Modify settings" permission* | Open `http://<box-ip>` → **Access management → Applications → Home Assistant**, enable **Modify settings** and save. No restart needed: the integration picks it up within one poll. While the permission is missing, a notice is shown in **Settings → Repairs** and on the box page of the panel. |
 | A LAN device is missing | Devices appear when the box lists them; new ones are added at the next poll (60 seconds by default). |
-| Too many old devices | Lower *Hide devices not seen for* in **Configure**: older devices are removed automatically. |
+| Too many old devices | Lower *Device activity window* in **Configure**: older devices are filtered, while registry entries remain intact. |
 | A device is named like `Espressif 7C:29` | The box has no name for it: the vendor and the end of the MAC are used. Rename it in Home Assistant if you like. |
 | After a box factory reset | The token is erased: accept the re-authorization. The LAN address goes back to `192.168.1.254`: set the old one again on the box, or use **Configure** to point the integration to the new address. |
 
@@ -395,3 +404,44 @@ Not affiliated with or endorsed by Iliad or Free. Use at your own risk.
 ## License
 
 [MIT](LICENSE)
+
+
+## New devices and network events
+
+The first successful LAN sample establishes the baseline. Previously present devices do not generate alerts. A previously unseen active MAC then appears under **New devices** in the admin panel. Use **Recognize** to mark it known or **Ignore** to also suppress its subsequent presence events. The decisions survive HA restarts and reloads. Notification delivery is optional in Configure; detection and the timeline work even when notifications are disabled. Private/randomized MAC addresses can appear as different devices.
+
+The **Network events** section is admin-only. It retains up to 200 events for seven days, locally in `.storage`, separately for each box. Clearing the timeline keeps device recognition. Removing the integration removes that box's journal. History contains network metadata (including names, MACs and IP changes), but never guest passwords or application/session tokens. HA events are intended for trusted automations and are visible through HA's event system.
+
+Events are observed at the polling interval: short outages can be missed. `wan_changed` reports the router's WAN state, not an independent Internet reachability test. `router_unavailable` means the integration's core API poll failed; it does not prove a physical router failure. Duration is included when a WAN-down transition was observed. Guest removal means an access disappeared from a successful response; the API does not establish whether it expired or was revoked.
+
+Automation events:
+
+- `iliadbox_new_device`: `entry_id`, `id`, `timestamp` (Unix seconds), `type`, `mac`, `name`, `vendor`.
+- `iliadbox_network_event`: the same identity/timestamp fields and type-specific fields. Types: `new_device`, `device_connected`, `device_disconnected`, `wan_changed`, `public_ip_changed`, `wifi_changed`, `router_restarted`, `router_available`, `router_unavailable`, `guest_created`, `guest_removed`. WAN/IP/Wi-Fi changes include `previous` and `current`; recovered WAN events may include `duration_seconds`; guest events include `access_id`.
+
+```yaml
+alias: Iliadbox new device
+triggers:
+  - trigger: event
+    event_type: iliadbox_new_device
+    event_data:
+      entry_id: YOUR_CONFIG_ENTRY_ID
+actions:
+  - action: persistent_notification.create
+    data:
+      title: New network device
+      message: "{{ trigger.event.data.name }} ({{ trigger.event.data.mac }})"
+```
+
+Use either the built-in notification option or your own automation to avoid duplicate notifications.
+
+## Upgrading to 0.11
+
+- Minimum HA is now **2024.12.5**. Existing box, host and band sensor IDs are retained. Multiple BSS on the same band are aggregated for the legacy band entities and displayed individually in the panel; mixed channel/SSID values are unknown rather than silently taking the last BSS.
+- Guest passwords no longer appear in persistent notifications or background panel snapshots. Enable both the sharing option and the image entity only if you want QR access outside the admin panel. Existing enabled image entities also require the new opt-in.
+- Device age filtering no longer deletes registry entries. Hidden hosts become unavailable and recover with their customizations when they return.
+- Unsupported optional endpoints are skipped until the next integration reload. Temporary optional failures preserve cached data and mark that source unavailable; they never delete guest entities.
+- Permission refresh runs at most every five minutes while settings rights are missing; retrying an action also refreshes the session. Read-only mode suppresses permission probing/reminders.
+- Panel screenshots above show earlier releases. The updated panel includes the review queue and timeline; English/Italian labels follow the HA user language.
+
+See [development and validation](docs/DEVELOPMENT.md) for test commands, compatibility coverage and the fix checklist. Physical-router validation is still needed before a production release.

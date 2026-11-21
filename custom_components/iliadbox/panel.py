@@ -2,20 +2,27 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from pathlib import Path
+import time
 from typing import Any
-
-import voluptuous as vol
 
 from homeassistant.components import frontend, panel_custom, websocket_api
 from homeassistant.components.http import StaticPathConfig
-from homeassistant.config_entries import ConfigEntryState
+from homeassistant.config_entries import SIGNAL_CONFIG_ENTRY_CHANGED, ConfigEntryState
 from homeassistant.const import CONF_HOST
-from homeassistant.core import HomeAssistant, callback
+from homeassistant.core import Context, HomeAssistant, callback
+from homeassistant.exceptions import HomeAssistantError
+from homeassistant.helpers.dispatcher import (
+    async_dispatcher_connect,
+    async_dispatcher_send,
+)
+import voluptuous as vol
 
+from .access import async_check_write
 from .api import IliadboxError
-from .const import APP_VERSION, DOMAIN
+from .const import APP_VERSION, CONF_READ_ONLY, DOMAIN
 from .coordinator import IliadboxCoordinator
 from .guest import (
     access_qr_svg,
@@ -42,6 +49,12 @@ def _coordinators(hass: HomeAssistant) -> dict[str, IliadboxCoordinator]:
 
 
 async def async_register_panel(hass: HomeAssistant) -> None:
+    lock = hass.data.setdefault(f"{DOMAIN}_panel_lock", asyncio.Lock())
+    async with lock:
+        await _async_register_panel(hass)
+
+
+async def _async_register_panel(hass: HomeAssistant) -> None:
     """Register static files, websocket commands and the sidebar panel once."""
     if not hass.data.get(DATA_STATIC):
         # Static paths cannot be unregistered: keep them for the whole HA run
@@ -54,6 +67,9 @@ async def async_register_panel(hass: HomeAssistant) -> None:
             ]
         )
         websocket_api.async_register_command(hass, ws_get_data)
+        websocket_api.async_register_command(hass, ws_subscribe)
+        websocket_api.async_register_command(hass, ws_device_status)
+        websocket_api.async_register_command(hass, ws_clear_history)
         websocket_api.async_register_command(hass, ws_set_wifi)
         websocket_api.async_register_command(hass, ws_reboot)
         websocket_api.async_register_command(hass, ws_create_guest)
@@ -91,8 +107,11 @@ def async_unregister_panel(hass: HomeAssistant) -> None:
 def ws_get_data(
     hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
 ) -> None:
+    connection.send_result(msg["id"], _box_data(hass, connection.user.is_admin))
+
+
+def _box_data(hass: HomeAssistant, is_admin: bool) -> list[dict[str, Any]]:
     boxes = []
-    is_admin = connection.user.is_admin
     coordinators = _coordinators(hass)
     for entry in hass.config_entries.async_entries(DOMAIN):
         if entry.entry_id not in coordinators:
@@ -111,12 +130,20 @@ def ws_get_data(
         data = coordinator.data or {}
         guest = data.get("guest", {"ssid": None, "keys": []})
         keys = guest["keys"]
-        if not is_admin:
-            # Guest passwords are only shown to admins
-            keys = [
-                {**k, "params": {p: v for p, v in k["params"].items() if p != "key"}}
-                for k in keys
-            ]
+        # Credentials are returned only by an explicit admin request, never in
+        # background snapshots, including snapshots sent to administrators.
+        keys = [
+            {
+                "id": k["id"],
+                "remaining": k.get("remaining"),
+                "expires_at": k.get("expires_at"),
+                "params": {
+                    p: k.get("params", {}).get(p)
+                    for p in ("description", "access_type", "max_use_count")
+                },
+            }
+            for k in keys
+        ]
         boxes.append(
             {
                 "entry_id": entry_id,
@@ -125,13 +152,70 @@ def ws_get_data(
                 "loaded": True,
                 "model": coordinator.client.info.get("box_model_name"),
                 "api_version": coordinator.client.info.get("api_version"),
-                "can_modify": "settings" in coordinator.client.permissions,
+                "can_modify": "settings" in coordinator.client.permissions
+                and not coordinator.config_entry.options.get(CONF_READ_ONLY, False),
+                "read_only": coordinator.config_entry.options.get(CONF_READ_ONLY, False),
+                "configuration_url": coordinator.client.configuration_url,
+                "freshness": data.get("freshness", {}),
+                "events": coordinator.history.events if is_admin else [],
+                "devices": coordinator.history.data["devices"] if is_admin else {},
                 "available": coordinator.last_update_success,
-                "connection": data.get("connection", {}),
-                "system": data.get("system", {}),
-                "wifi": data.get("wifi", {}),
-                "radios": list(data.get("radios", {}).values()),
-                "hosts": list(data.get("hosts", {}).values()),
+                "connection": {
+                    key: data.get("connection", {}).get(key)
+                    for key in (
+                        "state",
+                        "rate_down",
+                        "rate_up",
+                        "bytes_down",
+                        "bytes_up",
+                        "bandwidth_down",
+                        "bandwidth_up",
+                        "ipv4",
+                        "ipv6",
+                        "media",
+                        "type",
+                    )
+                },
+                "system": {
+                    **{
+                        key: data.get("system", {}).get(key)
+                        for key in ("uptime_val", "firmware_version")
+                    },
+                    **{
+                        key: [
+                            {"id": item.get("id"), "value": item.get("value")}
+                            for item in data.get("system", {}).get(key, [])
+                        ]
+                        for key in ("sensors", "fans")
+                    },
+                },
+                "wifi": {
+                    key: data.get("wifi", {}).get(key)
+                    for key in ("enabled", "power_saving", "mac_filter_state")
+                },
+                "radios": data.get("radio_details", []),
+                "hosts": [
+                    {
+                        **{
+                            key: host.get(key)
+                            for key in (
+                                "primary_name",
+                                "default_name",
+                                "vendor_name",
+                                "active",
+                                "last_activity",
+                            )
+                        },
+                        "l2ident": {
+                            key: host.get("l2ident", {}).get(key) for key in ("type", "id")
+                        },
+                        "l3connectivities": [
+                            {key: item.get(key) for key in ("af", "addr", "active")}
+                            for item in host.get("l3connectivities") or []
+                        ],
+                    }
+                    for host in data.get("hosts", {}).values()
+                ],
                 "guest": {
                     "ssid": guest["ssid"],
                     "keys": keys,
@@ -140,7 +224,7 @@ def ws_get_data(
             }
         )
     boxes.sort(key=lambda b: (b["title"] or "").lower())
-    connection.send_result(msg["id"], boxes)
+    return boxes
 
 
 async def _run(
@@ -156,11 +240,12 @@ async def _run(
         return
     _LOGGER.info("Panel action %s requested by user %s", action, connection.user.name)
     try:
+        await async_check_write(hass, coordinator, Context(user_id=connection.user.id))
         if action == "wifi":
             await coordinator.client.set_wifi_enabled(msg["enabled"])
         else:
             await coordinator.client.reboot()
-    except IliadboxError as err:
+    except (IliadboxError, HomeAssistantError) as err:
         _LOGGER.error("Panel action %s failed: %s", action, err)
         connection.send_error(msg["id"], "box_error", str(err))
         return
@@ -217,6 +302,7 @@ async def ws_create_guest(
         return
     _LOGGER.info("Guest Wi-Fi creation requested from panel by %s", connection.user.name)
     try:
+        await async_check_write(hass, coordinator, Context(user_id=connection.user.id))
         details = await async_create_guest(
             hass,
             coordinator,
@@ -229,7 +315,7 @@ async def ws_create_guest(
     except ValueError as err:
         connection.send_error(msg["id"], "invalid_format", str(err))
         return
-    except IliadboxError as err:
+    except (IliadboxError, HomeAssistantError) as err:
         _LOGGER.error("Guest Wi-Fi creation from panel failed: %s", err)
         connection.send_error(msg["id"], "box_error", str(err))
         return
@@ -252,14 +338,34 @@ def ws_guest_qr(
 ) -> None:
     """QR code (SVG) of an existing guest access. Admins only: it holds the password."""
     coordinator = _coordinators(hass).get(msg["entry_id"])
-    access = coordinator and next(
-        (k for k in coordinator.data["guest"]["keys"] if k["id"] == msg["access_id"]), None
+    if (
+        coordinator is None
+        or not coordinator.last_update_success
+        or not all(coordinator.data["freshness"].values())
+    ):
+        connection.send_error(msg["id"], "unavailable", "Guest data is unavailable")
+        return
+    access = next(
+        (
+            k
+            for k in coordinator.data["guest"]["keys"]
+            if k["id"] == msg["access_id"]
+            and (k.get("expires_at") is None or k["expires_at"] > time.time())
+        ),
+        None,
     )
     svg = access and access_qr_svg(coordinator, access)
     if not svg:
         connection.send_error(msg["id"], "not_found", "Guest access not found")
         return
-    connection.send_result(msg["id"], {"qr_svg": svg})
+    connection.send_result(
+        msg["id"],
+        {
+            "qr_svg": svg,
+            "password": access["params"]["key"],
+            "ssid": coordinator.data["guest"]["ssid"],
+        },
+    )
 
 
 @websocket_api.websocket_command(
@@ -279,9 +385,75 @@ async def ws_delete_guest(
         connection.send_error(msg["id"], "not_found", "Box not found")
         return
     try:
+        await async_check_write(hass, coordinator, Context(user_id=connection.user.id))
         await async_delete_guest(hass, coordinator, msg["access_id"])
-    except IliadboxError as err:
+    except (IliadboxError, HomeAssistantError) as err:
         _LOGGER.error("Guest Wi-Fi deletion from panel failed: %s", err)
         connection.send_error(msg["id"], "box_error", str(err))
         return
     connection.send_result(msg["id"])
+
+
+@websocket_api.websocket_command({vol.Required("type"): "iliadbox/subscribe"})
+@callback
+def ws_subscribe(
+    hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
+) -> None:
+    """Push cached snapshots; no additional router polling per browser tab."""
+
+    @callback
+    def send(*args: Any) -> None:
+        connection.send_message(
+            websocket_api.event_message(msg["id"], _box_data(hass, connection.user.is_admin))
+        )
+
+    removers = [
+        async_dispatcher_connect(hass, f"{DOMAIN}_updated", send),
+        async_dispatcher_connect(hass, SIGNAL_CONFIG_ENTRY_CHANGED, send),
+    ]
+    connection.subscriptions[msg["id"]] = lambda: [remove() for remove in removers]
+    connection.send_result(msg["id"])
+    send()
+
+
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): "iliadbox/device_status",
+        vol.Required("entry_id"): str,
+        vol.Required("mac"): str,
+        vol.Required("status"): vol.In(["known", "ignored"]),
+    }
+)
+@websocket_api.require_admin
+@callback
+def ws_device_status(
+    hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
+) -> None:
+    coordinator = _coordinators(hass).get(msg["entry_id"])
+    if coordinator is None:
+        connection.send_error(msg["id"], "not_found", "Box not found")
+        return
+    try:
+        coordinator.history.set_device_status(msg["mac"].lower(), msg["status"])
+    except ValueError as err:
+        connection.send_error(msg["id"], "invalid_format", str(err))
+        return
+    connection.send_result(msg["id"])
+    async_dispatcher_send(hass, f"{DOMAIN}_updated")
+
+
+@websocket_api.websocket_command(
+    {vol.Required("type"): "iliadbox/clear_history", vol.Required("entry_id"): str}
+)
+@websocket_api.require_admin
+@callback
+def ws_clear_history(
+    hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
+) -> None:
+    coordinator = _coordinators(hass).get(msg["entry_id"])
+    if coordinator is None:
+        connection.send_error(msg["id"], "not_found", "Box not found")
+        return
+    coordinator.history.clear()
+    connection.send_result(msg["id"])
+    async_dispatcher_send(hass, f"{DOMAIN}_updated")

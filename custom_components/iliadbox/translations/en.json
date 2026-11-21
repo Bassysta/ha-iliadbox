@@ -41,7 +41,7 @@
     "error": {
       "cannot_connect": "Cannot reach the box.",
       "ssl_error": "The box certificate could not be verified. Turn off \"Verify the certificate\" to accept the self-signed certificate (needed when connecting by IP address).",
-      "invalid_auth": "The box rejected the current authorization. Remove and add the integration again.",
+      "invalid_auth": "The router rejected the authorization. Reauthorize the integration.",
       "not_confirmed": "Request not confirmed on the box yet.",
       "auth_denied": "Request denied on the box. Press Submit to create a new one.",
       "auth_timeout": "Request timed out. Press Submit to create a new one.",
@@ -65,8 +65,11 @@
           "use_ssl": "Use HTTPS",
           "verify_ssl": "Verify the certificate",
           "scan_interval": "Polling interval",
-          "max_age_days": "Hide devices not seen for",
-          "log_level": "Log level"
+          "max_age_days": "Device activity window",
+          "log_level": "Log level",
+          "notify_new_devices": "Notify about new devices",
+          "read_only": "Read-only mode",
+          "share_guest_qr": "Allow sharing guest credentials through the image entity"
         },
         "data_description": {
           "host": "Local IP address or hostname of the box.",
@@ -74,8 +77,11 @@
           "use_ssl": "Encrypt the traffic between Home Assistant and the box.",
           "verify_ssl": "Only with HTTPS. Turn it off to accept the box self-signed certificate, or when connecting by IP address.",
           "scan_interval": "How often the box is read, in seconds (10-3600). Shorter means faster presence detection and more requests to the box.",
-          "max_age_days": "The box remembers every device ever connected. Devices whose last activity is older than this many days are removed from Home Assistant and the panel, and come back automatically if they reconnect. 0 = show all.",
-          "log_level": "Error: failures only. Info: also connections, Wi-Fi and device presence changes. Debug: also every API call."
+          "max_age_days": "Devices inactive for longer are filtered from the panel and stop updating. Their HA registry entries and customizations are kept; they resume automatically when seen again. 0 = show all.",
+          "log_level": "Global integration logging: the most verbose level requested by any configured box wins.",
+          "notify_new_devices": "Notify once when an unfamiliar active device appears. Existing devices form the initial baseline. Recognition survives restarts; private MAC addresses can appear as new devices.",
+          "read_only": "Disable router writes and missing-settings permission reminders. Device recognition and the timeline remain available.",
+          "share_guest_qr": "Opt in to exposing the guest password as a QR image to users who can read the entity. Also enable the image entity manually. Admin-only QR requests remain available without this option."
         }
       }
     },
@@ -89,7 +95,7 @@
   "issues": {
     "missing_settings_permission": {
       "title": "{box}: \"Modify settings\" permission missing",
-      "description": "The box does not give Home Assistant the **Modify settings** permission, so turning Wi-Fi on or off, rebooting and creating or revoking guest Wi-Fi accesses fail. Reading values keeps working.\n\nTo fix it:\n1. Open http://{host} in a browser and log in to the box.\n2. Go to **Access management → Applications**.\n3. Open **Home Assistant**, enable **Modify settings** and save.\n\nNo restart is needed: this notice disappears at the next poll."
+      "description": "The box does not give Home Assistant the **Modify settings** permission, so turning Wi-Fi on or off, rebooting and creating or revoking guest Wi-Fi accesses fail. Reading values keeps working.\n\nTo fix it:\n1. Open {host} in a browser and log in to the box.\n2. Go to **Access management → Applications**.\n3. Open **Home Assistant**, enable **Modify settings** and save.\n\nNo restart is needed: this notice disappears within five minutes, or after retrying an action. Enable read-only mode to stop this reminder."
     }
   },
   "selector": {
@@ -110,7 +116,7 @@
   "services": {
     "create_guest_wifi": {
       "name": "Create guest Wi-Fi",
-      "description": "Creates a guest access on the Iliadbox guest network. The password is returned in the response and shown in a notification.",
+      "description": "Creates a guest access. Credentials are returned to the authorized caller only; notifications never include the password. Administrators and internal automations may call this action.",
       "fields": {
         "config_entry_id": {
           "name": "Box",
@@ -118,7 +124,7 @@
         },
         "description": {
           "name": "Description",
-          "description": "Name of the access. Default: <box id>-guest, e.g. \"256B57-guest\" (the box id is the code in the box Wi-Fi names)."
+          "description": "Name of the access. Defaults to the box id followed by -guest, e.g. \"256B57-guest\" (the box id is the code in the box Wi-Fi names)."
         },
         "password": {
           "name": "Password",
@@ -140,7 +146,7 @@
     },
     "delete_guest_wifi": {
       "name": "Delete guest Wi-Fi",
-      "description": "Revokes a guest access.",
+      "description": "Revokes a guest access. Administrators and internal automations may call this action.",
       "fields": {
         "config_entry_id": {
           "name": "Box",
@@ -155,63 +161,183 @@
   },
   "entity": {
     "button": {
-      "create_guest_wifi": { "name": "Create guest Wi-Fi" }
+      "create_guest_wifi": {
+        "name": "Create guest Wi-Fi"
+      }
     },
     "image": {
-      "guest_qr": { "name": "Guest Wi-Fi QR code" }
+      "guest_qr": {
+        "name": "Guest Wi-Fi QR code"
+      }
     },
     "binary_sensor": {
-      "wan_connected": { "name": "Internet connection" },
-      "wifi_power_saving": { "name": "Wi-Fi power saving" },
-      "box_authenticated": { "name": "Box authenticated" },
-      "radio_active": { "name": "Wi-Fi {band}" },
-      "host_connected": { "name": "Connected" }
+      "wan_connected": {
+        "name": "Internet connection"
+      },
+      "wifi_power_saving": {
+        "name": "Wi-Fi power saving"
+      },
+      "box_authenticated": {
+        "name": "Box authenticated"
+      },
+      "radio_active": {
+        "name": "Wi-Fi {band}"
+      },
+      "host_connected": {
+        "name": "Connected"
+      }
     },
     "sensor": {
-      "rate_down": { "name": "Download rate" },
-      "rate_up": { "name": "Upload rate" },
-      "bandwidth_down": { "name": "Download bandwidth" },
-      "bandwidth_up": { "name": "Upload bandwidth" },
-      "bytes_down": { "name": "Downloaded data" },
-      "bytes_up": { "name": "Uploaded data" },
-      "ipv4": { "name": "Public IP" },
-      "ipv6": { "name": "Public IPv6" },
-      "media": { "name": "Line type" },
-      "uptime": { "name": "Uptime" },
-      "guest_wifi": { "name": "Guest Wi-Fi", "unit_of_measurement": "accesses" },
-      "connection_state": { "name": "Connection state" },
-      "connection_type": { "name": "Connection type" },
-      "ipv4_port_range": { "name": "IPv4 port range" },
-      "firmware": { "name": "Firmware" },
-      "serial": { "name": "Serial number" },
-      "mac": { "name": "MAC address" },
-      "board": { "name": "Board" },
-      "disk_status": { "name": "Disk status" },
-      "wifi_mac_filter": { "name": "Wi-Fi MAC filter" },
-      "guest_ssid": { "name": "Guest network" },
-      "connected_devices": { "name": "Connected devices", "unit_of_measurement": "devices" },
-      "known_devices": { "name": "Known devices", "unit_of_measurement": "devices" },
-      "wifi_clients": { "name": "Wi-Fi clients", "unit_of_measurement": "clients" },
-      "radio_clients": { "name": "Wi-Fi {band} clients", "unit_of_measurement": "clients" },
-      "radio_ssid": { "name": "Wi-Fi {band} network" },
-      "radio_channel": { "name": "Wi-Fi {band} channel" },
-      "radio_channel_width": { "name": "Wi-Fi {band} channel width" },
-      "radio_encryption": { "name": "Wi-Fi {band} encryption" },
-      "host_ip": { "name": "IP address" },
-      "host_link": { "name": "Connection type" },
-      "host_wifi_signal": { "name": "Wi-Fi signal" },
-      "host_wifi_band": { "name": "Wi-Fi band" },
-      "host_wifi_ssid": { "name": "Wi-Fi network" },
-      "host_wifi_standard": { "name": "Wi-Fi standard" },
-      "host_rate_down": { "name": "Download rate" },
-      "host_rate_up": { "name": "Upload rate" },
-      "host_bytes_down": { "name": "Downloaded data" },
-      "host_bytes_up": { "name": "Uploaded data" },
-      "host_last_activity": { "name": "Last activity" },
-      "host_first_activity": { "name": "First seen" }
+      "rate_down": {
+        "name": "Download rate"
+      },
+      "rate_up": {
+        "name": "Upload rate"
+      },
+      "bandwidth_down": {
+        "name": "Download bandwidth"
+      },
+      "bandwidth_up": {
+        "name": "Upload bandwidth"
+      },
+      "bytes_down": {
+        "name": "Downloaded data"
+      },
+      "bytes_up": {
+        "name": "Uploaded data"
+      },
+      "ipv4": {
+        "name": "Public IP"
+      },
+      "ipv6": {
+        "name": "Public IPv6"
+      },
+      "media": {
+        "name": "Line type"
+      },
+      "uptime": {
+        "name": "Uptime"
+      },
+      "guest_wifi": {
+        "name": "Guest Wi-Fi",
+        "unit_of_measurement": "accesses"
+      },
+      "connection_state": {
+        "name": "Connection state"
+      },
+      "connection_type": {
+        "name": "Connection type"
+      },
+      "ipv4_port_range": {
+        "name": "IPv4 port range"
+      },
+      "firmware": {
+        "name": "Firmware"
+      },
+      "serial": {
+        "name": "Serial number"
+      },
+      "mac": {
+        "name": "MAC address"
+      },
+      "board": {
+        "name": "Board"
+      },
+      "disk_status": {
+        "name": "Disk status"
+      },
+      "wifi_mac_filter": {
+        "name": "Wi-Fi MAC filter"
+      },
+      "guest_ssid": {
+        "name": "Guest network"
+      },
+      "connected_devices": {
+        "name": "Connected devices",
+        "unit_of_measurement": "devices"
+      },
+      "known_devices": {
+        "name": "Known devices",
+        "unit_of_measurement": "devices"
+      },
+      "wifi_clients": {
+        "name": "Wi-Fi clients",
+        "unit_of_measurement": "clients"
+      },
+      "radio_clients": {
+        "name": "Wi-Fi {band} clients",
+        "unit_of_measurement": "clients"
+      },
+      "radio_ssid": {
+        "name": "Wi-Fi {band} network"
+      },
+      "radio_channel": {
+        "name": "Wi-Fi {band} channel"
+      },
+      "radio_channel_width": {
+        "name": "Wi-Fi {band} channel width"
+      },
+      "radio_encryption": {
+        "name": "Wi-Fi {band} encryption"
+      },
+      "host_ip": {
+        "name": "IP address"
+      },
+      "host_link": {
+        "name": "Connection type"
+      },
+      "host_wifi_signal": {
+        "name": "Wi-Fi signal"
+      },
+      "host_wifi_band": {
+        "name": "Wi-Fi band"
+      },
+      "host_wifi_ssid": {
+        "name": "Wi-Fi network"
+      },
+      "host_wifi_standard": {
+        "name": "Wi-Fi standard"
+      },
+      "host_rate_down": {
+        "name": "Download rate"
+      },
+      "host_rate_up": {
+        "name": "Upload rate"
+      },
+      "host_bytes_down": {
+        "name": "Downloaded data"
+      },
+      "host_bytes_up": {
+        "name": "Uploaded data"
+      },
+      "host_last_activity": {
+        "name": "Last activity"
+      },
+      "host_first_activity": {
+        "name": "First seen"
+      }
     },
     "switch": {
-      "wifi": { "name": "Wi-Fi" }
+      "wifi": {
+        "name": "Wi-Fi"
+      }
+    }
+  },
+  "exceptions": {
+    "read_only": {
+      "message": "Read-only mode is enabled. Disable it in the integration options before changing router settings."
+    },
+    "box_error": {
+      "message": "The router could not complete the action: {error}"
+    },
+    "no_box": {
+      "message": "No loaded Iliadbox found."
+    },
+    "select_box": {
+      "message": "Several Iliadbox are configured. Select config_entry_id."
+    },
+    "invalid_guest": {
+      "message": "Invalid guest access parameters: {error}"
     }
   }
 }

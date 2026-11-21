@@ -13,6 +13,7 @@ from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.util import dt as dt_util
 
+from .const import CONF_SHARE_GUEST_QR
 from .coordinator import IliadboxConfigEntry, IliadboxCoordinator
 from .entity import IliadboxEntity
 from .guest import wifi_qr
@@ -31,6 +32,7 @@ class IliadboxGuestQrImage(IliadboxEntity, ImageEntity):
 
     _attr_translation_key = "guest_qr"
     _attr_content_type = "image/png"
+    _attr_entity_registry_enabled_default = False
 
     def __init__(self, hass: HomeAssistant, coordinator: IliadboxCoordinator) -> None:
         IliadboxEntity.__init__(self, coordinator, "guest_qr")
@@ -40,23 +42,34 @@ class IliadboxGuestQrImage(IliadboxEntity, ImageEntity):
 
     def _latest(self) -> dict[str, Any] | None:
         # Access ids grow with each creation: the highest is the newest
-        keys = self.coordinator.data["guest"]["keys"]
+        if not self.coordinator.config_entry.options.get(CONF_SHARE_GUEST_QR, False) or not all(
+            self.coordinator.data["freshness"].values()
+        ):
+            return None
+        keys = [
+            k
+            for k in self.coordinator.data["guest"]["keys"]
+            if k.get("expires_at") is None or k["expires_at"] > dt_util.utcnow().timestamp()
+        ]
         return max(keys, key=lambda k: k["id"]) if keys else None
 
     def _update_shown(self) -> None:
         """Bump image_last_updated when the QR content changes, so cards reload it."""
         access = self._latest()
         ssid = self.coordinator.data["guest"]["ssid"]
-        shown = (
-            (access["id"], ssid, access.get("params", {}).get("key")) if access else None
-        )
+        shown = (access["id"], ssid, access.get("params", {}).get("key")) if access else None
         if shown != self._shown:
             self._shown = shown
             self._attr_image_last_updated = dt_util.utcnow()
 
     @property
     def available(self) -> bool:
-        return super().available and self._shown is not None and self._shown[1] is not None
+        return (
+            super().available
+            and self._shown is not None
+            and bool(self._shown[1])
+            and bool(self._shown[2])
+        )
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
@@ -77,7 +90,7 @@ class IliadboxGuestQrImage(IliadboxEntity, ImageEntity):
         super()._handle_coordinator_update()
 
     async def async_image(self) -> bytes | None:
-        if not self._shown or not self._shown[1] or not self._shown[2]:
+        if not self.available or not self._latest():
             return None
         _, ssid, password = self._shown
         return await self.hass.async_add_executor_job(wifi_qr, ssid, password, "png")

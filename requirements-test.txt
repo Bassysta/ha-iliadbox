@@ -1,0 +1,7 @@
+# Minimum supported HA, with its matching test harness.
+pytest-homeassistant-custom-component==0.13.195
+segno==1.6.6
+ruff==0.17.6
+home-assistant-frontend==20241127.8
+# Match the resolver generation used by HA 2024.12 (new pycares leaks threads there).
+pycares==4.5.0
