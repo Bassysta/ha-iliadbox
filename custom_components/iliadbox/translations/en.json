@@ -124,7 +124,7 @@
         },
         "description": {
           "name": "Description",
-          "description": "Name of the access. Default: <box id>-guest, e.g. \"256B57-guest\" (the box id is the code in the box Wi-Fi names)."
+          "description": "Name of the access. Defaults to the box id followed by -guest, e.g. \"256B57-guest\" (the box id is the code in the box Wi-Fi names)."
         },
         "password": {
           "name": "Password",

@@ -124,7 +124,7 @@
         },
         "description": {
           "name": "Descrizione",
-          "description": "Nome dell’accesso. Predefinito: <id box>-guest, ad esempio \"256B57-guest\"."
+          "description": "Nome dell’accesso. Per impostazione predefinita usa l’id del box seguito da -guest, ad esempio \"256B57-guest\"."
         },
         "password": {
           "name": "Password",
