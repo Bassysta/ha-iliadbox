@@ -5,10 +5,14 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import hmac
+from ipaddress import ip_address
 import logging
+import re
+import time
 from typing import Any
 
 import aiohttp
+from yarl import URL
 
 from .const import APP_ID, APP_NAME, APP_VERSION, DEVICE_NAME
 
@@ -25,6 +29,10 @@ class IliadboxConnectionError(IliadboxError):
     """The box cannot be reached."""
 
 
+class IliadboxUnsupportedError(IliadboxError):
+    """The endpoint is not supported by this box."""
+
+
 class IliadboxSSLError(IliadboxConnectionError):
     """The box certificate could not be verified."""
 
@@ -36,13 +44,13 @@ class IliadboxAuthError(IliadboxError):
 class IliadboxPermissionError(IliadboxError):
     """The app lacks a permission on the box (e.g. 'settings')."""
 
-    def __init__(self, permission: str, host: str) -> None:
+    def __init__(self, permission: str, url: str) -> None:
         self.permission = permission
         label = PERMISSION_LABELS.get(permission, permission)
         super().__init__(
-            f"The box did not allow this action: the \"Home Assistant\" app lacks the "
-            f"\"{label}\" permission. To fix it, open http://{host} in a browser, go to "
-            f"Access management → Applications → Home Assistant, enable \"{label}\" and "
+            f'The box did not allow this action: the "Home Assistant" app lacks the '
+            f'"{label}" permission. To fix it, open {url} in a browser, go to '
+            f'Access management → Applications → Home Assistant, enable "{label}" and '
             f"save, then retry (no restart needed)."
         )
 
@@ -83,6 +91,38 @@ ERROR_MESSAGES = {
 }
 
 
+def normalize_host(host: str) -> str:
+    """Accept a hostname or IP literal, never a URL, credentials or path."""
+    host = host.strip().removeprefix("[").removesuffix("]")
+    try:
+        return str(ip_address(host))
+    except ValueError:
+        if (
+            not host
+            or len(host) > 253
+            or not re.fullmatch(r"[a-zA-Z0-9](?:[a-zA-Z0-9.-]*[a-zA-Z0-9])?", host)
+        ):
+            raise ValueError("Enter a hostname or IP address without a scheme or path") from None
+        if any(
+            not part or len(part) > 63 or part.startswith("-") or part.endswith("-")
+            for part in host.split(".")
+        ):
+            raise ValueError("Invalid hostname")
+        return host.lower()
+
+
+def object_result(value: Any, path: str) -> dict[str, Any]:
+    if not isinstance(value, dict):
+        raise IliadboxError(f"Invalid response structure for {path}")
+    return value
+
+
+def list_result(value: Any, path: str) -> list[dict[str, Any]]:
+    if not isinstance(value, list) or any(not isinstance(item, dict) for item in value):
+        raise IliadboxError(f"Invalid response structure for {path}")
+    return value
+
+
 class IliadboxClient:
     """Talks to the Iliadbox (Freebox OS API)."""
 
@@ -97,8 +137,12 @@ class IliadboxClient:
     ) -> None:
         self._session = session
         scheme = "https" if use_ssl else "http"
-        self.host = host
-        self._root = f"{scheme}://{host}:{port}"
+        self.host = normalize_host(host)
+        if isinstance(port, bool) or not isinstance(port, int) or not 1 <= port <= 65535:
+            raise ValueError("Port must be between 1 and 65535")
+        self._root = str(URL.build(scheme=scheme, host=self.host, port=port))
+        self.configuration_url = self._root
+        self.permissions_checked_at = 0.0
         # Permissions granted to the app, read when the session opens
         self.permissions: set[str] = set()
         # False skips certificate checks (self-signed or name not matching the IP)
@@ -124,11 +168,17 @@ class IliadboxClient:
                 info = await resp.json(content_type=None)
         except aiohttp.ClientSSLError as err:
             raise IliadboxSSLError(f"Certificate check failed: {err}") from err
-        except (aiohttp.ClientError, asyncio.TimeoutError, ValueError) as err:
+        except (aiohttp.ClientError, TimeoutError, ValueError) as err:
             raise IliadboxConnectionError(f"Cannot reach box: {err}") from err
 
-        major = str(info.get("api_version", "8.0")).split(".")[0]
-        base = info.get("api_base_url", "/api/")
+        info = object_result(info, "api_version")
+        version = info.get("api_version")
+        base = info.get("api_base_url")
+        if not isinstance(version, str) or not re.fullmatch(r"[0-9]+(?:\.[0-9]+)*", version):
+            raise IliadboxError("Invalid API version")
+        if not isinstance(base, str) or not re.fullmatch(r"/[a-zA-Z0-9_/]+/", base):
+            raise IliadboxError("Invalid API base path")
+        major = version.split(".")[0]
         self._base_url = f"{self._root}{base}v{major}/"
         self.info = info
         _LOGGER.debug(
@@ -153,6 +203,12 @@ class IliadboxClient:
             },
             auth=False,
         )
+        if (
+            not isinstance(result, dict)
+            or not isinstance(result.get("app_token"), str)
+            or not isinstance(result.get("track_id"), int)
+        ):
+            raise IliadboxError("Invalid authorization response")
         self._app_token = result["app_token"]
         _LOGGER.info(
             "Authorization requested (track_id %s): confirm it on the box",
@@ -162,42 +218,51 @@ class IliadboxClient:
 
     async def authorization_status(self, track_id: int) -> str:
         """Return unknown / pending / timeout / granted / denied."""
-        result = await self._request(
-            "GET", f"login/authorize/{track_id}", auth=False
-        )
+        result = await self._request("GET", f"login/authorize/{track_id}", auth=False)
+        if not isinstance(result, dict) or result.get("status") not in {
+            "unknown",
+            "pending",
+            "timeout",
+            "granted",
+            "denied",
+        }:
+            raise IliadboxError("Invalid authorization status")
         _LOGGER.debug("Authorization %s status: %s", track_id, result["status"])
         return result["status"]
 
     async def open_session(self) -> None:
         """Open a session using the HMAC of the challenge with the app token."""
+        async with self._login_lock:
+            await self._open_session()
+
+    async def _open_session(self) -> None:
+        """Open a session while holding the login lock."""
         if not self._app_token:
             raise IliadboxAuthError("No app token")
         _LOGGER.debug("Opening session")
         login = await self._request("GET", "login/", auth=False)
+        if not isinstance(login, dict) or not isinstance(login.get("challenge"), str):
+            raise IliadboxError("Invalid login challenge")
         password = hmac.new(
             self._app_token.encode(), login["challenge"].encode(), hashlib.sha1
         ).hexdigest()
-        try:
-            result = await self._request(
-                "POST",
-                "login/session/",
-                json={"app_id": APP_ID, "password": password},
-                auth=False,
-            )
-        except IliadboxError as err:
-            raise IliadboxAuthError(str(err)) from err
+        result = await self._request(
+            "POST",
+            "login/session/",
+            json={"app_id": APP_ID, "password": password},
+            auth=False,
+        )
+        if not isinstance(result, dict) or not isinstance(result.get("session_token"), str):
+            raise IliadboxError("Invalid session response")
+        if not isinstance(result.get("permissions", {}), dict):
+            raise IliadboxError("Invalid session permissions")
+        self.permissions_checked_at = time.monotonic()
         self._session_token = result["session_token"]
         self.permissions = {k for k, v in (result.get("permissions") or {}).items() if v}
         _LOGGER.info(
-            "Session opened, permissions: %s", ", ".join(sorted(self.permissions)) or "none"
+            "Session opened, permissions: %s",
+            ", ".join(sorted(self.permissions)) or "none",
         )
-        if "settings" not in self.permissions:
-            _LOGGER.warning(
-                "The app lacks the \"Modify settings\" permission: Wi-Fi switch, reboot and "
-                "guest Wi-Fi will fail. Enable it on http://%s → Access management → "
-                "Applications → Home Assistant",
-                self.host,
-            )
 
     async def _request(
         self,
@@ -212,11 +277,12 @@ class IliadboxClient:
         if auth and self._session_token is None:
             async with self._login_lock:
                 if self._session_token is None:
-                    await self.open_session()
+                    await self._open_session()
 
+        request_token = self._session_token
         headers = {}
         if auth:
-            headers["X-Fbx-App-Auth"] = self._session_token
+            headers["X-Fbx-App-Auth"] = request_token
         _LOGGER.debug("%s %s", method, path)
         try:
             async with self._session.request(
@@ -227,45 +293,70 @@ class IliadboxClient:
                 timeout=TIMEOUT,
                 ssl=self._ssl,
             ) as resp:
+                # Preserve structured API errors (including auth) on 4xx responses.
+                if resp.status == 429 or resp.status >= 500:
+                    raise IliadboxConnectionError(f"HTTP {resp.status} on {path}")
                 data = await resp.json(content_type=None)
+                if not isinstance(data, dict) or not isinstance(data.get("success"), bool):
+                    raise IliadboxError(f"Invalid response structure for {path}")
+                if data["success"]:
+                    resp.raise_for_status()
         except aiohttp.ClientSSLError as err:
             raise IliadboxSSLError(f"Certificate check failed: {err}") from err
-        except (aiohttp.ClientError, asyncio.TimeoutError, ValueError) as err:
+        except (aiohttp.ClientError, TimeoutError, ValueError) as err:
             raise IliadboxConnectionError(f"Request {path} failed: {err}") from err
 
         if data.get("success"):
             return data.get("result")
 
         code = data.get("error_code", "")
-        _LOGGER.debug("%s %s failed: %s (%s)", method, path, data.get("msg"), code)
+        if not isinstance(code, str):
+            raise IliadboxError(f"Invalid error response for {path}")
+        _LOGGER.debug("%s %s failed: %s", method, path, code)
         if auth and retry and code in ("auth_required", "invalid_session"):
             _LOGGER.info("Session expired, logging in again")
-            self._session_token = None
+            if self._session_token == request_token:
+                self._session_token = None
             return await self._request(method, path, json, auth, retry=False)
         if code == "insufficient_rights":
             # Permissions are fixed when a session opens: if the user granted the
             # permission meanwhile, a new session picks it up
             if auth and retry:
                 _LOGGER.debug("Missing permission on %s, retrying with a new session", path)
-                self._session_token = None
+                if self._session_token == request_token:
+                    self._session_token = None
                 return await self._request(method, path, json, auth, retry=False)
-            raise IliadboxPermissionError(data.get("missing_right") or "settings", self.host)
-        reason = ERROR_MESSAGES.get(code, f"box error \"{code or 'unknown'}\"")
-        if code in ("invalid_token", "pending_token", "denied_from_external_ip"):
+            raise IliadboxPermissionError(
+                data.get("missing_right") or "settings", self.configuration_url
+            )
+        reason = ERROR_MESSAGES.get(code, f'box error "{code or "unknown"}"')
+        if code in (
+            "invalid_token",
+            "pending_token",
+            "auth_required",
+            "invalid_session",
+        ):
             raise IliadboxAuthError(reason[0].upper() + reason[1:])
+        if code == "nodev":
+            raise IliadboxUnsupportedError(reason)
         raise IliadboxError(f"The box refused {method} {path}: {reason}")
 
     async def get_connection(self) -> dict[str, Any]:
-        return await self._request("GET", "connection/")
+        return object_result(await self._request("GET", "connection/"), "connection/")
 
     async def get_system(self) -> dict[str, Any]:
-        return await self._request("GET", "system/")
+        return object_result(await self._request("GET", "system/"), "system/")
 
     async def get_lan_hosts(self) -> list[dict[str, Any]]:
-        return await self._request("GET", "lan/browser/pub/") or []
+        hosts = list_result(await self._request("GET", "lan/browser/pub/"), "lan/browser/pub/")
+        for host in hosts:
+            ident = host.get("l2ident")
+            if not isinstance(ident, dict) or not isinstance(ident.get("id"), str):
+                raise IliadboxError("Invalid LAN host identity")
+        return hosts
 
     async def get_wifi_config(self) -> dict[str, Any]:
-        return await self._request("GET", "wifi/config/")
+        return object_result(await self._request("GET", "wifi/config/"), "wifi/config/")
 
     async def set_wifi_enabled(self, enabled: bool) -> None:
         _LOGGER.info("Turning Wi-Fi %s", "on" if enabled else "off")
@@ -280,18 +371,26 @@ class IliadboxClient:
         bss_list, aps = await asyncio.gather(
             self._request("GET", "wifi/bss/"), self._request("GET", "wifi/ap/")
         )
-        aps_by_id = {ap.get("id"): ap.get("status") or {} for ap in aps or []}
+        bss_list = list_result(bss_list, "wifi/bss/")
+        aps = list_result(aps, "wifi/ap/")
+        aps_by_id = {
+            ap.get("id"): object_result(ap.get("status") or {}, "wifi/ap/status")
+            for ap in aps or []
+        }
         radios = []
         for bss in bss_list or []:
-            status = bss.get("status") or {}
+            status = object_result(bss.get("status") or {}, "wifi/bss/status")
             params = (
                 bss.get("shared_bss_params")
                 if bss.get("use_shared_params")
                 else bss.get("bss_params")
             ) or {}
+            params = object_result(params, "wifi/bss/params")
             ap = aps_by_id.get(bss.get("phy_id"), {})
             radios.append(
                 {
+                    "id": bss.get("id"),
+                    "phy_id": bss.get("phy_id"),
                     "band": status.get("band"),
                     "state": status.get("state"),
                     "ssid": params.get("ssid"),
@@ -306,7 +405,16 @@ class IliadboxClient:
         return radios
 
     async def get_guest_keys(self) -> list[dict[str, Any]]:
-        return await self._request("GET", "wifi/custom_key/") or []
+        keys = list_result(await self._request("GET", "wifi/custom_key/"), "wifi/custom_key/")
+        for key in keys:
+            if not isinstance(key.get("id"), int) or not isinstance(key.get("params"), dict):
+                raise IliadboxError("Invalid guest access")
+            remaining = key.get("remaining")
+            if remaining is not None and (
+                isinstance(remaining, bool) or not isinstance(remaining, (int, float))
+            ):
+                raise IliadboxError("Invalid guest expiry")
+        return keys
 
     async def create_guest_key(
         self,
@@ -324,7 +432,7 @@ class IliadboxClient:
             access_type,
             max_use_count or "unlimited",
         )
-        return await self._request(
+        result = await self._request(
             "POST",
             "wifi/custom_key/",
             json={
@@ -335,6 +443,11 @@ class IliadboxClient:
                 "access_type": access_type,
             },
         )
+        if not isinstance(result, dict) or not isinstance(result.get("id"), int):
+            raise IliadboxError(
+                "Invalid guest creation response; check existing accesses before retrying"
+            )
+        return result
 
     async def delete_guest_key(self, key_id: int) -> None:
         _LOGGER.info("Deleting guest Wi-Fi access %s", key_id)

@@ -15,7 +15,7 @@ DEFAULT_LOG_LEVEL = "info"
 
 APP_ID = "ha.iliadbox"
 APP_NAME = "Home Assistant"
-APP_VERSION = "0.10.4"
+APP_VERSION = "0.11.0"
 DEVICE_NAME = "Home Assistant"
 
 # LAN devices not seen for more than this many days are hidden (0 = keep all)
@@ -29,3 +29,7 @@ MIN_SCAN_INTERVAL = 10
 MAX_SCAN_INTERVAL = 3600
 
 PLATFORMS = ["binary_sensor", "button", "device_tracker", "image", "sensor", "switch"]
+
+CONF_NOTIFY_NEW_DEVICES = "notify_new_devices"
+CONF_READ_ONLY = "read_only"
+CONF_SHARE_GUEST_QR = "share_guest_qr"

@@ -19,7 +19,9 @@ _LOGGER = logging.getLogger(__name__)
 
 
 @callback
-def _enable_trackers_disabled_by_integration(hass: HomeAssistant, entry: IliadboxConfigEntry) -> None:
+def _enable_trackers_disabled_by_integration(
+    hass: HomeAssistant, entry: IliadboxConfigEntry
+) -> None:
     """Before 0.6.0 trackers of unknown devices were created disabled: enable them.
 
     Trackers disabled by the user are left alone.
@@ -45,8 +47,6 @@ async def async_setup_entry(
 
     @callback
     def _add_new() -> None:
-        # Forget hosts hidden by max_age_days, so they are added again if they return
-        tracked.intersection_update(coordinator.data["hosts"])
         new = [mac for mac in coordinator.data["hosts"] if mac not in tracked]
         if new:
             _LOGGER.debug("Adding %d device trackers", len(new))
@@ -76,6 +76,10 @@ class IliadboxTracker(CoordinatorEntity[IliadboxCoordinator], ScannerEntity):
         return self.coordinator.data["hosts"].get(self._mac, {})
 
     @property
+    def available(self) -> bool:
+        return super().available and self._mac in self.coordinator.data["hosts"]
+
+    @property
     def mac_address(self) -> str:
         return self._mac
 
@@ -85,7 +89,7 @@ class IliadboxTracker(CoordinatorEntity[IliadboxCoordinator], ScannerEntity):
 
     @property
     def ip_address(self) -> str | None:
-        for l3 in self._host.get("l3connectivities", []):
+        for l3 in self._host.get("l3connectivities") or []:
             if l3.get("af") == "ipv4" and l3.get("active"):
                 return l3.get("addr")
         return None

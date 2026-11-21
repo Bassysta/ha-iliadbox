@@ -9,3 +9,9 @@ Thumbs.db
 # Local test material: never commit tokens or box dumps
 app_token.json
 dump/
+
+node_modules/
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/

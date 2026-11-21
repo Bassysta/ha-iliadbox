@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-import re
 from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import datetime
+import re
 from typing import Any
 
 from homeassistant.components.sensor import (
@@ -392,11 +392,7 @@ def _hw_sensors(system: dict[str, Any]) -> list[dict[str, Any]]:
     """Temperature sensors: list form (API v8+) or legacy temp_* keys."""
     if isinstance(system.get("sensors"), list):
         return system["sensors"]
-    return [
-        {"id": k, "name": k, "value": v}
-        for k, v in system.items()
-        if k.startswith("temp_")
-    ]
+    return [{"id": k, "name": k, "value": v} for k, v in system.items() if k.startswith("temp_")]
 
 
 async def async_setup_entry(
@@ -415,13 +411,25 @@ async def async_setup_entry(
         IliadboxFanSensor(coordinator, f["id"], _english_name(f["id"]))
         for f in data["system"].get("fans", [])
     )
-    entities.extend(
-        IliadboxRadioSensor(coordinator, band, desc)
-        for band in data["radios"]
-        for desc in RADIO_SENSORS
-    )
+
     entities.append(IliadboxGuestSensor(coordinator, "guest_wifi"))
     async_add_entities(entities)
+    bands: set[str] = set()
+
+    @callback
+    def add_radios() -> None:
+        new = set(coordinator.data["radios"]) - bands
+        bands.update(new)
+        async_add_entities(
+            [
+                IliadboxRadioSensor(coordinator, band, desc)
+                for band in sorted(new)
+                for desc in RADIO_SENSORS
+            ]
+        )
+
+    add_radios()
+    entry.async_on_unload(coordinator.async_add_listener(add_radios))
 
     add_entities_for_new_hosts(
         entry,
@@ -458,6 +466,11 @@ class IliadboxSensor(IliadboxEntity, SensorEntity):
         self.entity_description = description
 
     @property
+    def available(self) -> bool:
+        source = "radios" if self.entity_description.key in {"wifi_clients", "guest_ssid"} else None
+        return super().available and (source is None or self.coordinator.data["freshness"][source])
+
+    @property
     def native_value(self) -> Any:
         return self.entity_description.value_fn(self.coordinator.data)
 
@@ -478,7 +491,11 @@ class IliadboxRadioSensor(IliadboxEntity, SensorEntity):
 
     @property
     def available(self) -> bool:
-        return super().available and self._band in self.coordinator.data["radios"]
+        return (
+            super().available
+            and self.coordinator.data["freshness"]["radios"]
+            and self._band in self.coordinator.data["radios"]
+        )
 
     @property
     def native_value(self) -> Any:
@@ -544,6 +561,10 @@ class IliadboxGuestSensor(IliadboxEntity, SensorEntity):
     _unrecorded_attributes = frozenset({"accesses"})
 
     @property
+    def available(self) -> bool:
+        return super().available and self.coordinator.data["freshness"]["guest"]
+
+    @property
     def native_value(self) -> int:
         return len(self.coordinator.data["guest"]["keys"])
 
@@ -580,19 +601,24 @@ class IliadboxGuestAccessSensor(IliadboxEntity, SensorEntity):
         self._attr_name = f"Guest access {params.get('description') or access_id}"
 
     @property
+    def available(self) -> bool:
+        return (
+            super().available
+            and self.coordinator.data["freshness"]["guest"]
+            and self._access is not None
+        )
+
+    @property
     def _access(self) -> dict[str, Any] | None:
         return next(
-            (k for k in self.coordinator.data["guest"]["keys"] if k["id"] == self._access_id), None
+            (k for k in self.coordinator.data["guest"]["keys"] if k["id"] == self._access_id),
+            None,
         )
 
     @property
     def native_value(self) -> datetime | None:
         access = self._access
-        if not access or access.get("remaining") is None:
-            return None
-        # Rounded to the minute so the state does not change on every poll
-        expires = dt_util.utcnow() + timedelta(seconds=access["remaining"])
-        return expires.replace(second=0, microsecond=0)
+        return _ts(access.get("expires_at")) if access else None
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
@@ -607,7 +633,7 @@ class IliadboxGuestAccessSensor(IliadboxEntity, SensorEntity):
 
     @callback
     def _handle_coordinator_update(self) -> None:
-        if self._access is None:
+        if self.coordinator.data["freshness"]["guest"] and self._access is None:
             # Access revoked or expired: drop the entity, allow the id to come back
             self._tracked.discard(self._access_id)
             er.async_get(self.hass).async_remove(self.entity_id)

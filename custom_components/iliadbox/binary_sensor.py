@@ -12,7 +12,7 @@ from homeassistant.components.binary_sensor import (
     BinarySensorEntityDescription,
 )
 from homeassistant.const import EntityCategory
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .coordinator import IliadboxConfigEntry, IliadboxCoordinator
@@ -58,8 +58,17 @@ async def async_setup_entry(
     entities: list[BinarySensorEntity] = [
         IliadboxBinarySensor(coordinator, desc) for desc in BINARY_SENSORS
     ]
-    entities.extend(IliadboxRadioActive(coordinator, band) for band in coordinator.data["radios"])
     async_add_entities(entities)
+    bands: set[str] = set()
+
+    @callback
+    def add_radios() -> None:
+        new = set(coordinator.data["radios"]) - bands
+        bands.update(new)
+        async_add_entities([IliadboxRadioActive(coordinator, band) for band in sorted(new)])
+
+    add_radios()
+    entry.async_on_unload(coordinator.async_add_listener(add_radios))
 
     # Always enabled: presence automations need it for every device
     add_entities_for_new_hosts(
@@ -73,7 +82,9 @@ class IliadboxBinarySensor(IliadboxEntity, BinarySensorEntity):
     entity_description: IliadboxBinarySensorDescription
 
     def __init__(
-        self, coordinator: IliadboxCoordinator, description: IliadboxBinarySensorDescription
+        self,
+        coordinator: IliadboxCoordinator,
+        description: IliadboxBinarySensorDescription,
     ) -> None:
         super().__init__(coordinator, description.key)
         self.entity_description = description
@@ -96,7 +107,11 @@ class IliadboxRadioActive(IliadboxEntity, BinarySensorEntity):
 
     @property
     def available(self) -> bool:
-        return super().available and self._band in self.coordinator.data["radios"]
+        return (
+            super().available
+            and self.coordinator.data["freshness"]["radios"]
+            and self._band in self.coordinator.data["radios"]
+        )
 
     @property
     def is_on(self) -> bool:

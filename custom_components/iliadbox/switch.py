@@ -10,7 +10,9 @@ from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
+from .access import async_check_write
 from .api import IliadboxError
+from .const import DOMAIN
 from .coordinator import IliadboxConfigEntry
 from .entity import IliadboxEntity
 
@@ -41,9 +43,14 @@ class IliadboxWifiSwitch(IliadboxEntity, SwitchEntity):
         await self._set(False)
 
     async def _set(self, enabled: bool) -> None:
+        await async_check_write(self.hass, self.coordinator, self._context)
         try:
             await self.coordinator.client.set_wifi_enabled(enabled)
         except IliadboxError as err:
             _LOGGER.error("Cannot turn Wi-Fi %s: %s", "on" if enabled else "off", err)
-            raise HomeAssistantError(f"Cannot change Wi-Fi state: {err}") from err
+            raise HomeAssistantError(
+                translation_domain=DOMAIN,
+                translation_key="box_error",
+                translation_placeholders={"error": str(err)},
+            ) from err
         await self.coordinator.async_request_refresh()

@@ -1,0 +1,343 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Connetti Iliadbox",
+        "description": "Indirizzo locale della box, ad esempio 192.168.1.254. Home Assistant deve poter raggiungere la rete della box.",
+        "data": {
+          "host": "Indirizzo",
+          "port": "Porta",
+          "use_ssl": "Usa HTTPS",
+          "verify_ssl": "Verifica il certificato"
+        },
+        "data_description": {
+          "host": "Indirizzo IP locale o nome host della box.",
+          "port": "80 per HTTP, 443 per HTTPS. Attivando HTTPS, la porta 80 diventa automaticamente 443.",
+          "use_ssl": "Cifra il traffico tra Home Assistant e la box.",
+          "verify_ssl": "Solo per HTTPS. Disattiva per accettare un certificato autofirmato o non corrispondente all’indirizzo IP."
+        }
+      },
+      "reconfigure": {
+        "title": "Modifica connessione Iliadbox",
+        "description": "Aggiorna indirizzo, porta o impostazioni HTTPS mantenendo l’autorizzazione esistente.",
+        "data": {
+          "host": "Indirizzo",
+          "port": "Porta",
+          "use_ssl": "Usa HTTPS",
+          "verify_ssl": "Verifica il certificato"
+        },
+        "data_description": {
+          "host": "Indirizzo IP locale o nome host della box.",
+          "port": "80 per HTTP, 443 per HTTPS. Attivando HTTPS, la porta 80 diventa automaticamente 443.",
+          "use_ssl": "Cifra il traffico tra Home Assistant e la box.",
+          "verify_ssl": "Solo per HTTPS. Disattiva per accettare un certificato autofirmato o non corrispondente all’indirizzo IP."
+        }
+      },
+      "link": {
+        "title": "Autorizza Home Assistant",
+        "description": "Accetta la richiesta per \"Home Assistant\" sul display della Iliadbox ({host}), quindi premi Invia.\n\nPer controllare Wi-Fi, riavvio e accessi ospiti, abilita il permesso di modifica impostazioni in Gestione accessi → Applicazioni nell’interfaccia della box."
+      }
+    },
+    "error": {
+      "cannot_connect": "Impossibile raggiungere la box.",
+      "ssl_error": "Impossibile verificare il certificato. Per accettarlo, disattiva \"Verifica il certificato\".",
+      "invalid_auth": "La box ha rifiutato l’autorizzazione. Riautorizza l’integrazione.",
+      "not_confirmed": "Richiesta non ancora confermata sulla box.",
+      "auth_denied": "Richiesta rifiutata. Premi Invia per crearne una nuova.",
+      "auth_timeout": "Richiesta scaduta. Premi Invia per riprovare.",
+      "unknown": "Errore inatteso."
+    },
+    "abort": {
+      "already_configured": "Questa box è già configurata.",
+      "reauth_successful": "Riautorizzazione completata.",
+      "reconfigure_successful": "Connessione aggiornata.",
+      "wrong_box": "L’indirizzo appartiene a una box diversa da quella configurata."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Impostazioni Iliadbox",
+        "description": "Le modifiche alla connessione vengono verificate prima del salvataggio. L’integrazione viene ricaricata senza richiedere una nuova autorizzazione.",
+        "data": {
+          "host": "Indirizzo",
+          "port": "Porta",
+          "use_ssl": "Usa HTTPS",
+          "verify_ssl": "Verifica il certificato",
+          "scan_interval": "Intervallo di aggiornamento",
+          "max_age_days": "Finestra di attività dei dispositivi",
+          "log_level": "Livello dei log",
+          "notify_new_devices": "Notifica nuovi dispositivi",
+          "read_only": "Modalità sola lettura",
+          "share_guest_qr": "Consenti condivisione credenziali ospiti tramite entità immagine"
+        },
+        "data_description": {
+          "host": "Indirizzo IP locale o nome host della box.",
+          "port": "80 per HTTP, 443 per HTTPS. Attivando HTTPS, la porta 80 diventa automaticamente 443.",
+          "use_ssl": "Cifra il traffico tra Home Assistant e la box.",
+          "verify_ssl": "Solo per HTTPS. Disattiva per accettare un certificato autofirmato o non corrispondente all’indirizzo IP.",
+          "scan_interval": "Intervallo di lettura in secondi (10–3600). Valori inferiori aumentano la frequenza di rilevazione e le richieste alla box.",
+          "max_age_days": "I dispositivi inattivi da più giorni vengono filtrati dal pannello e non aggiornati. Registro HA e personalizzazioni sono conservati. Al ritorno riprendono gli aggiornamenti. 0 = mostra tutti.",
+          "log_level": "Livello globale dell’integrazione: viene usato il più dettagliato richiesto dalle box configurate.",
+          "notify_new_devices": "Notifica una sola volta un nuovo dispositivo attivo. I dispositivi presenti al primo avvio sono considerati conosciuti. Il riconoscimento sopravvive ai riavvii; i MAC privati possono apparire come nuovi dispositivi.",
+          "read_only": "Disabilita modifiche alla box e avvisi sui permessi mancanti. Riconoscimento dispositivi e cronologia restano disponibili.",
+          "share_guest_qr": "Consente di esporre la password ospiti tramite immagine QR agli utenti che leggono l’entità. Occorre abilitare manualmente anche l’entità immagine. Il QR nel pannello amministratore resta disponibile senza questa opzione."
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Impossibile raggiungere la box.",
+      "ssl_error": "Impossibile verificare il certificato. Per accettarlo, disattiva \"Verifica il certificato\".",
+      "invalid_auth": "La box ha rifiutato l’autorizzazione. Riautorizza l’integrazione.",
+      "wrong_box": "L’indirizzo appartiene a una box diversa da quella configurata."
+    }
+  },
+  "issues": {
+    "missing_settings_permission": {
+      "title": "{box}: permesso di modifica impostazioni mancante",
+      "description": "La box non consente a Home Assistant di modificare Wi-Fi, riavvio o accessi ospiti. Le letture restano disponibili.\n\nApri {host} → Gestione accessi → Applicazioni → Home Assistant e abilita la modifica delle impostazioni. L’avviso scompare entro cinque minuti o dopo un nuovo tentativo di azione. Per usare solo le letture, attiva la modalità sola lettura nelle opzioni."
+    }
+  },
+  "selector": {
+    "log_level": {
+      "options": {
+        "error": "Errore",
+        "info": "Informazioni",
+        "debug": "Debug"
+      }
+    },
+    "access_type": {
+      "options": {
+        "net_only": "Solo Internet",
+        "full": "Rete completa (Internet e dispositivi locali)"
+      }
+    }
+  },
+  "services": {
+    "create_guest_wifi": {
+      "name": "Crea accesso Wi-Fi ospiti",
+      "description": "Crea un accesso ospite. Le credenziali vengono restituite solo al chiamante autorizzato e non appaiono nelle notifiche. Disponibile per amministratori e automazioni interne.",
+      "fields": {
+        "config_entry_id": {
+          "name": "Box",
+          "description": "Necessario solo se sono configurate più Iliadbox."
+        },
+        "description": {
+          "name": "Descrizione",
+          "description": "Nome dell’accesso. Predefinito: <id box>-guest, ad esempio \"256B57-guest\"."
+        },
+        "password": {
+          "name": "Password",
+          "description": "Da 8 a 63 caratteri. Lascia vuoto per generarne una casuale."
+        },
+        "duration_hours": {
+          "name": "Durata",
+          "description": "Ore prima della scadenza dell’accesso."
+        },
+        "max_devices": {
+          "name": "Dispositivi massimi",
+          "description": "Numero di dispositivi che possono usare l’accesso. 0 = illimitati."
+        },
+        "access_type": {
+          "name": "Tipo di accesso",
+          "description": "Solo Internet oppure anche i dispositivi della rete locale."
+        }
+      }
+    },
+    "delete_guest_wifi": {
+      "name": "Revoca accesso Wi-Fi ospiti",
+      "description": "Revoca un accesso ospite. Disponibile per amministratori e automazioni interne.",
+      "fields": {
+        "config_entry_id": {
+          "name": "Box",
+          "description": "Necessario solo se sono configurate più Iliadbox."
+        },
+        "access_id": {
+          "name": "ID accesso",
+          "description": "ID dell’accesso mostrato nel pannello e nella risposta alla creazione."
+        }
+      }
+    }
+  },
+  "entity": {
+    "button": {
+      "create_guest_wifi": {
+        "name": "Crea accesso Wi-Fi ospiti"
+      }
+    },
+    "image": {
+      "guest_qr": {
+        "name": "QR Wi-Fi ospiti"
+      }
+    },
+    "binary_sensor": {
+      "wan_connected": {
+        "name": "Connessione Internet"
+      },
+      "wifi_power_saving": {
+        "name": "Risparmio energetico Wi-Fi"
+      },
+      "box_authenticated": {
+        "name": "Box autenticata"
+      },
+      "radio_active": {
+        "name": "Wi-Fi {band}"
+      },
+      "host_connected": {
+        "name": "Connesso"
+      }
+    },
+    "sensor": {
+      "rate_down": {
+        "name": "Velocità download"
+      },
+      "rate_up": {
+        "name": "Velocità upload"
+      },
+      "bandwidth_down": {
+        "name": "Banda download"
+      },
+      "bandwidth_up": {
+        "name": "Banda upload"
+      },
+      "bytes_down": {
+        "name": "Dati scaricati"
+      },
+      "bytes_up": {
+        "name": "Dati caricati"
+      },
+      "ipv4": {
+        "name": "IP pubblico"
+      },
+      "ipv6": {
+        "name": "IPv6 pubblico"
+      },
+      "media": {
+        "name": "Tipo di linea"
+      },
+      "uptime": {
+        "name": "Tempo di attività"
+      },
+      "guest_wifi": {
+        "name": "Wi-Fi ospiti",
+        "unit_of_measurement": "accessi"
+      },
+      "connection_state": {
+        "name": "Stato connessione"
+      },
+      "connection_type": {
+        "name": "Tipo di connessione"
+      },
+      "ipv4_port_range": {
+        "name": "Intervallo porte IPv4"
+      },
+      "firmware": {
+        "name": "Firmware"
+      },
+      "serial": {
+        "name": "Numero di serie"
+      },
+      "mac": {
+        "name": "Indirizzo MAC"
+      },
+      "board": {
+        "name": "Scheda"
+      },
+      "disk_status": {
+        "name": "Stato disco"
+      },
+      "wifi_mac_filter": {
+        "name": "Filtro MAC Wi-Fi"
+      },
+      "guest_ssid": {
+        "name": "Rete ospiti"
+      },
+      "connected_devices": {
+        "name": "Dispositivi connessi",
+        "unit_of_measurement": "dispositivi"
+      },
+      "known_devices": {
+        "name": "Dispositivi conosciuti",
+        "unit_of_measurement": "dispositivi"
+      },
+      "wifi_clients": {
+        "name": "Client Wi-Fi",
+        "unit_of_measurement": "client"
+      },
+      "radio_clients": {
+        "name": "Client Wi-Fi {band}",
+        "unit_of_measurement": "client"
+      },
+      "radio_ssid": {
+        "name": "Rete Wi-Fi {band}"
+      },
+      "radio_channel": {
+        "name": "Canale Wi-Fi {band}"
+      },
+      "radio_channel_width": {
+        "name": "Larghezza canale Wi-Fi {band}"
+      },
+      "radio_encryption": {
+        "name": "Cifratura Wi-Fi {band}"
+      },
+      "host_ip": {
+        "name": "Indirizzo IP"
+      },
+      "host_link": {
+        "name": "Tipo di connessione"
+      },
+      "host_wifi_signal": {
+        "name": "Segnale Wi-Fi"
+      },
+      "host_wifi_band": {
+        "name": "Banda Wi-Fi"
+      },
+      "host_wifi_ssid": {
+        "name": "Rete Wi-Fi"
+      },
+      "host_wifi_standard": {
+        "name": "Standard Wi-Fi"
+      },
+      "host_rate_down": {
+        "name": "Velocità download"
+      },
+      "host_rate_up": {
+        "name": "Velocità upload"
+      },
+      "host_bytes_down": {
+        "name": "Dati scaricati"
+      },
+      "host_bytes_up": {
+        "name": "Dati caricati"
+      },
+      "host_last_activity": {
+        "name": "Ultima attività"
+      },
+      "host_first_activity": {
+        "name": "Prima rilevazione"
+      }
+    },
+    "switch": {
+      "wifi": {
+        "name": "Wi-Fi"
+      }
+    }
+  },
+  "exceptions": {
+    "read_only": {
+      "message": "La modalità sola lettura è attiva. Disattivala nelle opzioni prima di modificare la box."
+    },
+    "box_error": {
+      "message": "La box non ha completato l’azione: {error}"
+    },
+    "no_box": {
+      "message": "Nessuna Iliadbox caricata."
+    },
+    "select_box": {
+      "message": "Sono configurate più Iliadbox. Seleziona config_entry_id."
+    },
+    "invalid_guest": {
+      "message": "Parametri dell’accesso ospite non validi: {error}"
+    }
+  }
+}

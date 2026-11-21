@@ -10,7 +10,9 @@ from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
+from .access import async_check_write
 from .api import IliadboxError
+from .const import DOMAIN
 from .coordinator import IliadboxConfigEntry
 from .entity import IliadboxEntity
 from .guest import (
@@ -43,23 +45,29 @@ class IliadboxRebootButton(IliadboxEntity, ButtonEntity):
     _attr_entity_category = EntityCategory.CONFIG
 
     async def async_press(self) -> None:
+        await async_check_write(self.hass, self.coordinator, self._context)
         try:
             await self.coordinator.client.reboot()
         except IliadboxError as err:
             _LOGGER.error("Cannot reboot the box: %s", err)
-            raise HomeAssistantError(f"Cannot reboot the box: {err}") from err
+            raise HomeAssistantError(
+                translation_domain=DOMAIN,
+                translation_key="box_error",
+                translation_placeholders={"error": str(err)},
+            ) from err
 
 
 class IliadboxGuestButton(IliadboxEntity, ButtonEntity):
     """Guest access with defaults (24 h, internet only, unlimited devices).
 
-    The password is shown in a persistent notification.
+    Credentials are available in the admin panel.
     """
 
     _attr_translation_key = "create_guest_wifi"
     _attr_icon = "mdi:wifi-plus"
 
     async def async_press(self) -> None:
+        await async_check_write(self.hass, self.coordinator, self._context)
         try:
             await async_create_guest(
                 self.hass,
@@ -72,4 +80,8 @@ class IliadboxGuestButton(IliadboxEntity, ButtonEntity):
             )
         except IliadboxError as err:
             _LOGGER.error("Cannot create guest Wi-Fi: %s", err)
-            raise HomeAssistantError(f"Cannot create guest Wi-Fi: {err}") from err
+            raise HomeAssistantError(
+                translation_domain=DOMAIN,
+                translation_key="box_error",
+                translation_placeholders={"error": str(err)},
+            ) from err
