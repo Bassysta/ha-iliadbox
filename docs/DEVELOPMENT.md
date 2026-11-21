@@ -41,6 +41,7 @@ The shared guest component preserves input while snapshots update. A single subs
 | Compatibility and missing tests | HA minimum 2024.12.5; two pinned HA matrices, import smoke check, frontend tests and lint | CI workflow |
 | Session concurrency / frequent permissions polling | Invalidate only the session used by the failed request; throttle permission checks and support read-only mode | Late-response and permission tests |
 | Destructive age filtering | Keep registries/customizations; mark absent hosts unavailable and reuse entities on return | Real HA setup/filter/return/unload test |
+| Tracker setup order | Register host devices before scanner entities so linking does not depend on sensor platform startup order; preserve MAC unique IDs | Tracker-only platform setup regression |
 | Frontend error loss and ambiguous box selection | Persistent command errors, explicit multi-box selection, disabled unavailable controls | DOM tests |
 | English-only UI / incorrect URLs / logger conflict | Shared EN/IT strings, translated HA errors, IPv6-safe URLs, deterministic documented global log policy | Translation, host validation and IPv6 tests |
 

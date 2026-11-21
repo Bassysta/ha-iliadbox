@@ -3,6 +3,7 @@
 from unittest.mock import patch
 
 from homeassistant.config_entries import ConfigEntryState
+from homeassistant.const import Platform
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
 
@@ -42,3 +43,22 @@ async def test_setup_filter_return_unload(hass, entry, client, host):
         assert await hass.config_entries.async_unload(entry.entry_id)
         await hass.async_block_till_done()
         assert entry.state is ConfigEntryState.NOT_LOADED
+
+
+async def test_tracker_links_device_before_sensor_platforms_load(hass, entry, client):
+    with (
+        patch("custom_components.iliadbox.IliadboxClient", return_value=client),
+        patch("custom_components.iliadbox.PLATFORMS", [Platform.DEVICE_TRACKER]),
+    ):
+        assert await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+        tracker = next(
+            e
+            for e in er.async_entries_for_config_entry(er.async_get(hass), entry.entry_id)
+            if e.domain == "device_tracker"
+        )
+        assert tracker.unique_id == "aa:bb:cc:dd:ee:01"
+        assert tracker.disabled_by is None
+        assert dr.async_get(hass).async_get(tracker.device_id)
+        assert hass.states.get(tracker.entity_id).state == "home"
+        assert await hass.config_entries.async_unload(entry.entry_id)

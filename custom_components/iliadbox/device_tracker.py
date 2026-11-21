@@ -7,13 +7,14 @@ from typing import Any
 
 from homeassistant.components.device_tracker import ScannerEntity
 from homeassistant.core import HomeAssistant, callback
+from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from homeassistant.util import dt as dt_util
 
 from .coordinator import IliadboxConfigEntry, IliadboxCoordinator
-from .entity import box_id, host_device_info
+from .entity import host_device_info
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -50,6 +51,14 @@ async def async_setup_entry(
         new = [mac for mac in coordinator.data["hosts"] if mac not in tracked]
         if new:
             _LOGGER.debug("Adding %d device trackers", len(new))
+            # ScannerEntity ignores _attr_device_info and only links devices
+            # already in the registry. Register hosts before adding trackers,
+            # independently of which sensor platform finishes setup first.
+            for mac in new:
+                dr.async_get(hass).async_get_or_create(
+                    config_entry_id=entry.entry_id,
+                    **host_device_info(coordinator, mac),
+                )
             tracked.update(new)
             async_add_entities(IliadboxTracker(coordinator, mac) for mac in new)
 
@@ -68,8 +77,6 @@ class IliadboxTracker(CoordinatorEntity[IliadboxCoordinator], ScannerEntity):
     def __init__(self, coordinator: IliadboxCoordinator, mac: str) -> None:
         super().__init__(coordinator)
         self._mac = mac
-        self._attr_unique_id = f"{box_id(coordinator)}_{mac}"
-        self._attr_device_info = host_device_info(coordinator, mac)
 
     @property
     def _host(self) -> dict[str, Any]:
