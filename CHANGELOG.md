@@ -2,6 +2,7 @@
 
 ## 0.11.0
 
+- Show only active IPv4 addresses in LAN device sensors; report unknown instead of an inactive historical address.
 - Add persistent new-device recognition, optional notifications and automation events, with an initial baseline and per-box isolation.
 - Add a local network event timeline (200 events, seven days), including WAN outage durations when observed.
 - Preserve error classifications and healthy optional data; validate API envelopes, protect concurrent session renewal and verify router identity during reauthorization.

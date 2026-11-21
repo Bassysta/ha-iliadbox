@@ -275,7 +275,7 @@ def _host_ip(host: dict[str, Any]) -> str | None:
     for item in l3:
         if item.get("af") == "ipv4" and item.get("active"):
             return item.get("addr")
-    return next((i.get("addr") for i in l3 if i.get("af") == "ipv4"), None)
+    return None
 
 
 @dataclass(frozen=True, kw_only=True)
